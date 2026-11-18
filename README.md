@@ -1,75 +1,50 @@
 # PoolSim: Uber Pool, enhanced
 
-The given prototype, extended. Up to 2 riders share a cab, 1 seat per rider. Two cities run side by side with the
-same riders and cabs: With Pool and No Pool.
+In the original prototype, a driver who carried two riders together often earned less than if they had carried them
+one after the other. That happened on about 70% of pooled trips. Meanwhile, every rider who opted in got 30% off,
+even when nobody ever joined them.
 
-Run: double-click `start.bat` or open `index.html`. No server, no install.
-Check: `node test/sim.test.js` (27 tests) and `node test/compare.js` (reproduces the results below).
+This version fixes both, gets more riders to actually share, and shows the difference live.
 
-## What was wrong in the original
+Run: double-click `start.bat` or open `index.html`. No server.
+Check: `node test/sim.test.js` (27 tests), `node test/compare.js` (the numbers below).
 
-- Drivers are paid per second with a rider aboard, so time with two riders is paid once, not twice. About 70% of
-  pooled trips paid the driver less than carrying the same riders separately.
-- Every pool rider got 30% off even if nobody ever joined them.
-- The matcher sent pool riders to empty cabs whenever that was slightly cheaper, so few actually shared.
+## What changed, and where to see it
 
-## Enhancements and how to see them
+Everything is in the sidebar under Enhancements. Click "Original rules", run, then "All enhancements" and run again.
 
-All are in the sidebar under Enhancements. The "Original rules" and "All enhancements" buttons switch between the two
-versions in one click.
+1. **Drivers are paid per rider.** A pooled trip never pays less than the same riders would have as solo trips.
+   Watch the tile "Pooled trips where the driver lost money": it stays at 0.
+2. **The premium adjusts itself.** The extra pay while two riders are aboard is relearned after every pooled trip,
+   instead of a fixed 25%. Watch X in the "With Pool" header climb to about 40%.
+3. **Sharing is rewarded.** 35% off if the rider actually shared, 25% if nobody joined.
+4. **Pool riders get pooled.** A pool rider joins a cab already on a pool trip unless that's 20+ seconds worse than
+   an empty cab. Watch "Pool riders who actually shared" go from 55% to 66%, and more orange cabs on the map.
+5. **No driver ends below zero.** If a trip costs more in fuel than it pays, the platform covers it. Set "Driver
+   running cost" to 0.30: drivers below zero drop from 23 to 0.
 
-1. **Driver paid per rider.** When a pooled trip ends, the driver gets at least what the riders would have paid as
-   solo trips; the platform covers the gap.
-   See it: the tile "Pooled trips where the driver lost money" stays at 0; hovering a cab shows the extra pay.
-2. **Dynamic premium X.** X (extra pay while 2 are aboard) is relearned after every pooled trip to the break-even value
-   instead of a fixed 25%.
-   See it: the "With Pool" map header shows X rising from 25% to about 40%.
-3. **Bigger discount only if matched.** 35% off if the rider actually shared, 25% if they never did (originally 30%
-   for everyone).
-   See it: the "Pool riders saved" tile shows both rates.
-4. **Pool-first matching.** A pool rider joins a cab already on a pool trip unless that is 20+ seconds worse than an
-   empty cab.
-   See it: the tile "Pool riders who actually shared" goes up (55% → 66% on the default city), and more orange
-   (2 aboard) cabs appear on the map.
-5. **Pickup cover.** If a trip costs the driver more in fuel than it pays, the platform pays the difference.
-   See it: set "Driver running cost" to 0.30 and run; the report row "Drivers below zero" goes from 23 to 0.
+The tiles under the maps compare live against the same city running under the original rules. At the end, the report
+re-runs your settings on 12 other cities, to show the result isn't luck.
 
-While it runs, the tiles under the maps compare against the same city running under the original rules in the
-background (green = better). At the end, the report shows the full before/after and re-runs your settings on
-12 other random cities to check the result isn't luck.
+Bonus: under Incidents, turn on "Bomb threats". A cordon closes at random; cabs reroute around it and riders inside
+walk to its edge.
 
-## Extra: random bomb threats
+## Does it work?
 
-Under Incidents, set "Bomb threats" above 0. A red cordon closes at random places and times, the same in both cities.
-Cabs drive around it on the shortest open route, pickups and drop-offs inside it move to its edge, and drivers are
-paid for empty detours.
+Over 16 random cities at the default settings:
 
-## Results
+- Drivers earn $88 more per run and are better off in 16 of 16 cities. No pooled trip loses them money.
+- Riders save $32 more per run (15 of 16 cities). Sharing rises from 60% to 67%.
+- Waits and rides completed are unchanged.
+- The platform pays for it: about 18% of its margin.
 
-From `node test/compare.js`: 16 random cities at 30 cabs, original vs enhanced.
+## What didn't work
 
-- Trips where the driver lost money: 15.8 → 0 per run.
-- Drivers earn $88 more per run (better off in 16 of 16 cities).
-- Riders save $32 more per run (15 of 16 cities).
-- Pool riders who actually share: 60% → 67% (29% → 47% with 60 cabs).
-- Waits and rides completed: unchanged.
-- The platform pays for this: margin down about 18%.
+Optimal batch matching (Hungarian algorithm) changed nothing: requests arrive about one at a time. Moving idle cabs
+to empty areas cut waits, but made drivers pay for empty driving. Holding riders for a match made waits longer.
 
-Same direction with 15 and 60 cabs, except riders break even with 60 cabs.
+## Code
 
-## Tried and dropped
-
-- Batch matching with the Hungarian algorithm: no gain, because requests arrive about one at a time.
-- Moving idle cabs to empty areas: shorter waits, but drivers pay for the empty driving.
-- Holding riders for a match, and widening the ping radius: both made waits longer.
-
-## Code changes
-
-- `js/sim.js`: the new rules (`closeTrip`, `closeJob`, fares, `matchQueue`) and bomb threats (`startThreat`, `dist`,
-  `nextStep`).
-- `js/metrics.js`, `js/report.js`: before/after on the same city, and the 12-city check.
-- `js/app.js`, `index.html`, `styles.css`: sidebar controls, presets, live comparison tiles, cordon on the map.
-- `test/`: 11 new tests (including "all enhancements off = original engine"), `compare.js`, and the original engine
-  for that test.
-
-Assumptions, as in the original: no traffic, uniform demand, every driver accepts. Opt-in doesn't react to price.
+The rules are in `js/sim.js` (`closeTrip`, `closeJob`, `matchQueue`, and `dist`/`nextStep` for the cordon). The
+before/after report is in `js/metrics.js` and `js/report.js`, and the controls in `js/app.js`. The tests include a
+check that switching every enhancement off gives exactly the original engine.
