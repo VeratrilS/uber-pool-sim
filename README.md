@@ -19,7 +19,8 @@ city without it. Built on top of the given prototype.
 All off = original prototype (tested).
 
 While it runs, the tiles under the maps show **enhanced vs original rules live**: the same city also runs under the original
-prototype's rules in the background.
+prototype's rules in the background. After the run, the report re-checks the same settings on 12 other random cities
+(drivers better off in 12/12, riders in 11/12 at the defaults), so the result isn't one lucky city.
 
 ## Incidents: random bomb threats
 
@@ -43,6 +44,6 @@ The report counts threats, riders caught, and stops moved.
 ## Code changes
 
 - `js/sim.js`: the five rules (`closeTrip`, `closeJob`, fares, `matchQueue`) and bomb threats (`startThreat`, `dist`, `nextStep`)
-- `js/metrics.js`, `js/report.js`: report section comparing original vs enhanced on the same city
+- `js/metrics.js`, `js/report.js`: original vs enhanced on the same city, plus the 12-city check (`validatePoint`)
 - `js/app.js`, `index.html`, `styles.css`: sidebar controls and live tiles
 - `test/sim.test.js`: 11 new tests (27 total); `start.bat`: launcher

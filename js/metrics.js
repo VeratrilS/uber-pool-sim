@@ -302,6 +302,17 @@ function definePoolMetrics(root) {
     };
   }
 
+  // One random city (seed) under the original and the enhanced rules: used to
+  // check that the improvement holds beyond the city on screen.
+  function validatePoint(cfg, seed) {
+    var c = Object.assign({}, cfg, { seed: seed });
+    return {
+      seed: seed,
+      e: ruleStats(new Sim.Simulation(c).runToEnd()),
+      o: ruleStats(new Sim.Simulation(Object.assign({}, c, Sim.ORIGINAL_RULES)).runToEnd()),
+    };
+  }
+
   // Re-run the same city under the original prototype's rules, stopped at the
   // same moment, so the report can show exactly what the enhancements changed.
   function originalRules(sim) {
@@ -363,7 +374,7 @@ function definePoolMetrics(root) {
 
   var api = {
     summarize: summarize, histogram: histogram, worldStats: worldStats,
-    ruleStats: ruleStats, anyEnhancement: anyEnhancement,
+    ruleStats: ruleStats, anyEnhancement: anyEnhancement, validatePoint: validatePoint,
     sweepRadii: sweepRadii, sweepPoint: sweepPoint, recommendRadius: recommendRadius,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

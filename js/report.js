@@ -724,7 +724,28 @@
       + (cfg.netFloor && o.lossJobs ? 'Without pickup cover, ' + plural(o.lossJobs, 'job') + ' paid the driver less than it cost to drive (' + fmt.money(o.jobLoss) + '); with it, none did. ' : '')
       + (cfg.driverRate / cfg.cabSpeed <= cfg.costPerBlock ? '<b>Warning: driver pay per block (' + fmt.money(cfg.driverRate / cfg.cabSpeed) + ') is not above the running cost per block (' + fmt.money(cfg.costPerBlock) + '), so every trip loses money and the pickup cover is paying for it. The base pay rate needs to rise.</b> ' : '')
       + 'The per-driver twin comparison is mostly about which rides each cab happened to get, which no pay rule can control, so read it as context rather than a target.';
-    return head + '<p class="enh-lede">' + lede + '</p>' + tableHtml(groups, 'Original rules', 'Enhanced') + '</section>';
+    return head + '<p class="enh-lede">' + lede + '</p>' + tableHtml(groups, 'Original rules', 'Enhanced')
+      + '<h4 class="enh-sub">Does it hold in other cities?</h4>'
+      + '<p class="enh-lede">The same settings on 12 other random cities (different riders and cab positions), original rules vs enhanced, run in the background.</p>'
+      + '<div id="validate-body"><div class="chart-empty" id="validate-progress">Checking 12 other random cities…</div></div></section>';
+  }
+
+  // Win counts across other random cities (from validatePoint).
+  function validateHtml(list, n) {
+    if (!list.length) return '';
+    var count = function (f) { return list.filter(f).length; };
+    var avg = function (f) { return list.reduce(function (s, p) { return s + f(p); }, 0) / list.length; };
+    var out = function (k) { return k + ' / ' + n + ' cities'; };
+    return '<div class="facts facts4">'
+      + fact('Drivers better off', out(count(function (p) { return p.e.netPay > p.o.netPay; })),
+        'average ' + fmt.signedMoney(avg(function (p) { return p.e.netPay - p.o.netPay; })) + ' per city after running cost')
+      + fact('Riders save more', out(count(function (p) { return p.e.saved > p.o.saved; })),
+        'average ' + fmt.signedMoney(avg(function (p) { return p.e.saved - p.o.saved; })) + ' per city')
+      + fact('No pooled trip where a driver lost money', out(count(function (p) { return p.e.shortAfterTopup === 0; })),
+        'original rules: ' + avg(function (p) { return p.o.shortAfterTopup; }).toFixed(1) + ' such trips per city')
+      + fact('Platform margin', fmt.signedMoney(avg(function (p) { return p.e.margin - p.o.margin; })),
+        'average change per city: this pays for the gains')
+      + '</div>';
   }
 
   var STATES = [
@@ -875,6 +896,6 @@
   function dec(v) { return v == null ? '—' : v.toFixed(1); }
 
   root.PoolReport = {
-    render: render, sweepHtml: sweepHtml, fmt: fmt, tone: tone, wireLineChart: wireLineChart,
+    render: render, sweepHtml: sweepHtml, validateHtml: validateHtml, fmt: fmt, tone: tone, wireLineChart: wireLineChart,
   };
 })(this);

@@ -524,6 +524,7 @@
       Report.wireLineChart(svg, showTip, hideTip);
     });
     runSweep(sim.cfg);
+    runValidate(sim.cfg);
     els.reportPanel.focus();
   }
 
@@ -539,6 +540,7 @@
       + '(' + window.definePoolMetrics.toString() + ')(self);\n'
       + 'self.onmessage = function (e) {\n'
       + '  var d = e.data;\n'
+      + '  if (d.kind === "validate") { self.postMessage({ job: d.job, res: self.PoolMetrics.validatePoint(d.cfg, d.seed) }); return; }\n'
       + '  self.postMessage({ job: d.job, idx: d.idx, point: self.PoolMetrics.sweepPoint(d.cfg, d.radius, d.seeds) });\n'
       + '};\n';
   }
@@ -630,9 +632,60 @@
     }
   }
 
+  // "Does it hold in other cities?": the same settings on the next 12 seeds,
+  // original vs enhanced rules, in one background worker (main thread if not).
+  var VALIDATE_CITIES = 12;
+  var validateJob = 0, validateWorker = null, validateCache = {};
+
+  function stopValidate() {
+    if (validateWorker) validateWorker.terminate();
+    validateWorker = null;
+  }
+
+  function runValidate(cfg) {
+    if (!Metrics.anyEnhancement(cfg)) return;
+    var key = JSON.stringify(cfg), job = ++validateJob, n = VALIDATE_CITIES, res = [];
+    var seedAt = function (i) { return (cfg.seed + 1 + i) >>> 0; };
+    function show() {
+      var body = $('validate-body');
+      if (body) body.innerHTML = Report.validateHtml(res, n);
+    }
+    function progress() {
+      var p = $('validate-progress');
+      if (p) p.textContent = 'Checking ' + n + ' other random cities… ' + res.length + ' done';
+    }
+    function done() { validateCache[key] = res; stopValidate(); show(); }
+    function mainThread() {
+      res = [];
+      (function tick() {
+        if (job !== validateJob) return;
+        res.push(Metrics.validatePoint(cfg, seedAt(res.length)));
+        progress();
+        if (res.length < n) setTimeout(tick, 0); else done();
+      })();
+    }
+    if (validateCache[key]) { res = validateCache[key]; show(); return; }
+    stopValidate();
+    try {
+      validateWorker = new Worker(URL.createObjectURL(new Blob([workerSource()], { type: 'text/javascript' })));
+    } catch (e) { validateWorker = null; }
+    if (!validateWorker) { mainThread(); return; }
+    var send = function () { validateWorker.postMessage({ kind: 'validate', job: job, cfg: cfg, seed: seedAt(res.length) }); };
+    validateWorker.onmessage = function (e) {
+      if (e.data.job !== validateJob) return;
+      res.push(e.data.res);
+      progress();
+      if (res.length === n) done(); else send();
+    };
+    validateWorker.onerror = function () { if (job === validateJob) { stopValidate(); mainThread(); } };
+    send();
+  }
+
   function closeReport() {
     sweepJob++;
     stopWorkers();
+    validateJob++;
+    stopValidate();
     if (els.report.hidden) return;
     els.report.hidden = true;
     document.body.style.overflow = '';
