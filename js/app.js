@@ -204,6 +204,10 @@
 
   function newRun() {
     state.sim = new Sim.Simulation(state.cfg);
+    // The same city under the original prototype's rules, run in step with the
+    // enhanced one so the improvement shows live (null if nothing is enhanced).
+    state.orig = Metrics.anyEnhancement(state.sim.cfg)
+      ? new Sim.Simulation(Object.assign({}, state.cfg, Sim.ORIGINAL_RULES)) : null;
     state.acc = 0;
     state.summary = null;
     state.hover = null;
@@ -265,6 +269,7 @@
       var t0 = sim.t;
       while (state.acc >= Sim.DT - 1e-9 && !sim.done) {
         sim.step();
+        if (state.orig) state.orig.step();
         state.acc -= Sim.DT;
         if (performance.now() > deadline) { state.acc = 0; break; }
       }
@@ -380,40 +385,32 @@
         (ep == null || eb == null ? '' : '<span class="delta flat">' + (ep >= eb ? '+' : '\u2212') + Math.abs((ep - eb) * 100).toFixed(1) + ' pts</span>')
         + '<span>of cab time · ' + (eb == null ? '—' : fmt.pct(eb)) + ' without Pool</span>');
 
-    els.liveEnh.innerHTML = enhancementTiles(sim);
+    els.liveEnh.innerHTML = enhancementTiles();
 
     if (state.hover) showCabTip(state.hover.view, state.hover.cab, state.hover.event);
   }
 
   function onOff(on) { return '<span class="onoff ' + (on ? 'on' : 'off') + '">' + (on ? 'On' : 'Off') + '</span>'; }
-  function plural(n, word) { return fmt.int(n) + ' ' + word + (n === 1 ? '' : 's'); }
 
-  function enhancementTiles(sim) {
-    var cfg = sim.cfg, T = sim.pool.totals;
-    var shared = 0, alone = 0;
-    sim.pool.riders.forEach(function (r) {
-      if (!r.pool || r.state !== 'done') return;
-      if (r.sharedSec > 1e-6) shared++; else alone++;
-    });
-    return tile('Paid per rider ' + onOff(cfg.driverGuarantee),
-        cfg.driverGuarantee ? fmt.money(T.topup) : fmt.int(T.shortTrips) + ' short',
-        cfg.driverGuarantee
-          ? '<span>extra paid on ' + plural(T.topupTrips, 'pooled trip') + ' of ' + fmt.int(T.pooledTrips) + ' · no driver lost money by pooling</span>'
-          : '<span>of ' + fmt.int(T.pooledTrips) + ' pooled trips paid the driver less than solo (' + fmt.money(T.shortfall) + ')</span>')
-      + tile('Premium X now ' + onOff(cfg.dynamicPremium), fmt.pct(sim.pool.X),
-        cfg.dynamicPremium
-          ? '<span>started at ' + cfg.driverPremium + '% · learned from ' + plural(T.pooledTrips, 'pooled trip') + '</span>'
-          : '<span>fixed, as set</span>')
-      + tile('Refunded to sharers ' + onOff(cfg.matchedDiscount),
-        cfg.matchedDiscount ? fmt.money(T.refunds) : '—',
-        cfg.matchedDiscount
-          ? '<span>' + fmt.int(shared) + ' shared (' + cfg.poolDiscount + '% off) · ' + fmt.int(alone) + ' rode alone (' + cfg.unmatchedDiscount + '% off)</span>'
-          : '<span>every opt-in gets ' + cfg.poolDiscount + '% off, shared or not</span>')
-      + tile('Pickup cover ' + onOff(cfg.netFloor),
-        cfg.netFloor ? fmt.money(T.cover) : fmt.int(T.lossJobs) + ' at a loss',
-        cfg.netFloor
-          ? '<span>' + plural(T.lossJobs, 'job') + ' cost more to drive than they paid · covered, no driver below zero</span>'
-          : '<span>jobs that cost more to drive than they paid (' + fmt.money(T.jobLoss) + ')</span>');
+  // Enhanced vs original rules, same city, both running now.
+  function enhancementTiles() {
+    if (!state.orig) {
+      return '<div class="tile tile-wide"><div class="tile-label">Enhancements ' + onOff(false) + '</div>'
+        + '<div class="tile-sub"><span>All enhancements are off, so this is the original prototype. Switch them on in the sidebar to see the improvement here.</span></div></div>';
+    }
+    var e = Metrics.ruleStats(state.sim), o = Metrics.ruleStats(state.orig);
+    var vs = function (text) { return '<span>vs ' + text + ' with original rules</span>'; };
+    var pts = function (v) { return (v >= 0 ? '+' : '−') + Math.abs(v * 100).toFixed(0) + ' pts'; };
+    return tile('Driver earnings after costs', fmt.money(e.netPay),
+        chip(e.netPay - o.netPay, true, fmt.signedMoney(e.netPay - o.netPay)) + vs(fmt.money(o.netPay)))
+      + tile('Pooled trips where the driver lost money', fmt.int(e.shortAfterTopup),
+        chip(e.shortAfterTopup - o.shortAfterTopup, false, fmt.signedInt(e.shortAfterTopup - o.shortAfterTopup)) + vs(fmt.int(o.shortAfterTopup)))
+      + tile('Pool riders who actually shared', e.shareRate == null ? '—' : fmt.pct(e.shareRate),
+        (e.shareRate == null || o.shareRate == null ? '' : chip(e.shareRate - o.shareRate, true, pts(e.shareRate - o.shareRate)))
+        + vs(o.shareRate == null ? '—' : fmt.pct(o.shareRate)))
+      + tile('Average wait for pickup', fmt.sec(e.avgWait),
+        (e.avgWait == null || o.avgWait == null ? '' : chip(e.avgWait - o.avgWait, false, fmt.signedSec(e.avgWait - o.avgWait)))
+        + vs(fmt.sec(o.avgWait)));
   }
 
   // ------------------------------------------------------------ hover inspector

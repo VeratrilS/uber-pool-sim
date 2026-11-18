@@ -17,6 +17,9 @@ city without it. Built on top of the given prototype.
 
 All off = original prototype (tested).
 
+While it runs, the tiles under the maps show **enhanced vs original rules live**: the same city also runs under the original
+prototype's rules in the background.
+
 ## Incidents: random bomb threats
 
 Set "Bomb threats" in the sidebar (default 0 = off). At a random time and place, a square cordon closes for a while,

@@ -255,8 +255,9 @@ input:disabled { cursor: not-allowed; opacity: 0.5; }
 /* ------------------------------------------------------------------ live tiles */
 
 .live { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
-.live-enh { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }
-.live-enh .tile { border-style: dashed; }
+.live-enh { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 6px; }
+.live-cap { margin: 18px 0 0; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.tile-wide { grid-column: 1 / -1; }
 .onoff { font-size: 10px; font-weight: 650; padding: 1px 6px; border-radius: 999px; margin-left: 4px; vertical-align: 1px; text-transform: uppercase; letter-spacing: 0.04em; }
 .onoff.on { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
 .onoff.off { background: color-mix(in srgb, var(--muted) 15%, transparent); color: var(--muted); }
