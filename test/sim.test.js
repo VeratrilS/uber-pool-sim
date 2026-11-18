@@ -28,6 +28,15 @@ function runChecked(over, onStep) {
   return s.finish();
 }
 const inCar = (r) => r.dropoffAt - r.pickupAt;
+// Solo trip time on this city's streets (routes and slow right half), no cordon.
+function soloTime(w, r) {
+  const z = w.zone;
+  w.zone = null;
+  const t = w.dist(r.ox, r.oy, r.dx, r.dy) / w.speed;
+  w.zone = z;
+  return t;
+}
+const ORIGINAL = Object.assign({}, S.ORIGINAL_RULES, S.ORIGINAL_CITY);
 
 const SCENARIOS = [
   {},
@@ -74,18 +83,18 @@ test('every pool rider rides at most maxDetour x their solo estimate', () => {
     const s = finished(over);
     for (const r of s.pool.riders) {
       if (r.state !== 'done' || r.affected) continue;
-      assert(inCar(r) <= s.cfg.maxDetour * r.est + EPS,
+      assert(inCar(r) <= s.cfg.maxDetour * Math.max(r.est, soloTime(s.pool, r)) + EPS,
         `rider ${r.id}: ${inCar(r).toFixed(3)}s > ${s.cfg.maxDetour} x ${r.est.toFixed(3)}s`);
     }
   }
 });
 
-test('solo riders (both worlds) ride exactly their estimate and never share', () => {
+test('solo riders (both worlds) ride exactly their solo route time and never share', () => {
   for (const over of SCENARIOS) {
     const s = finished(over);
-    for (const r of s.base.riders.concat(s.pool.riders.filter((x) => !x.pool))) {
+    for (const [w, list] of [[s.base, s.base.riders], [s.pool, s.pool.riders.filter((x) => !x.pool)]]) for (const r of list) {
       if (r.state !== 'done' || r.affected) continue;
-      assert(Math.abs(inCar(r) - r.est) < EPS, `rider ${r.id} solo ride ${inCar(r)} != ${r.est}`);
+      assert(Math.abs(inCar(r) - soloTime(w, r)) < EPS, `rider ${r.id} solo ride ${inCar(r)} != ${soloTime(w, r)}`);
       assert(r.sharedSec < EPS && r.coRiders.length === 0, `solo rider ${r.id} shared`);
     }
     for (const c of s.base.cabs) assert(c.time.two < EPS, 'baseline cab carried 2');
@@ -138,7 +147,7 @@ test('every cab-second is idle, empty, 1 aboard or 2 aboard', () => {
 
 test('original rules: driver pay = rate x (occupied s + X x 2-aboard s), and sums across cabs', () => {
   for (const over of SCENARIOS) {
-    const s = finished(Object.assign({}, over, S.ORIGINAL_RULES));
+    const s = finished(Object.assign({}, over, ORIGINAL));
     const X = s.cfg.driverPremium / 100;
     for (const w of [s.pool, s.base]) {
       let total = 0;
@@ -153,7 +162,7 @@ test('original rules: driver pay = rate x (occupied s + X x 2-aboard s), and sum
 });
 
 test('original rules: pool riders pay (1 - Y) x standard fare, everyone else full fare', () => {
-  const s = runChecked(Object.assign({ poolDiscount: 40 }, S.ORIGINAL_RULES));
+  const s = runChecked(Object.assign({ poolDiscount: 40 }, ORIGINAL));
   for (const w of [s.pool, s.base]) {
     for (const r of w.riders) {
       if (r.pickupAt == null) continue;
@@ -236,7 +245,7 @@ test('all enhancements off reproduces the original prototype exactly', () => {
   for (const over of SCENARIOS.filter((o) => !o.threatsPer10Min)) {
     const cfg = Object.assign({}, O.DEFAULTS, over);
     const a = new O.Simulation(cfg).runToEnd();
-    const b = new S.Simulation(Object.assign({}, cfg, S.ORIGINAL_RULES)).runToEnd();
+    const b = new S.Simulation(Object.assign({}, cfg, ORIGINAL)).runToEnd();
     for (const k of ['pool', 'base']) {
       for (const key of ['completed', 'lost', 'driverPay', 'revenue', 'premium', 'reroutes', 'reassigned']) {
         assert.strictEqual(b[k].totals[key], a[k].totals[key], `${k}.${key} differs for ${JSON.stringify(over)}`);
@@ -355,7 +364,8 @@ test('pool-first: 0 restores the cheapest-wins rule; on, more pool riders share 
       for (const [s, add] of [[on, (n) => { onShared += n; }], [off, (n) => { offShared += n; }]]) {
         add(s.pool.riders.filter((r) => r.pool && r.state === 'done' && r.sharedSec > EPS).length);
         for (const r of s.pool.riders) {
-          if (r.state === 'done') assert(inCar(r) <= s.cfg.maxDetour * r.est + EPS, `rider ${r.id} over the cap`);
+          if (r.affected) continue;
+          if (r.state === 'done') assert(inCar(r) <= s.cfg.maxDetour * Math.max(r.est, soloTime(s.pool, r)) + EPS, `rider ${r.id} over the cap`);
           if (r.pickupAt != null) assert(r.pickupAt <= r.latestPickupAt + EPS, `rider ${r.id} slipped`);
         }
       }
@@ -366,32 +376,47 @@ test('pool-first: 0 restores the cheapest-wins rule; on, more pool riders share 
 
 // ------------------------------------------------------------ bomb threats
 
-test('cordon distance equals the true shortest path (BFS) on the grid', () => {
-  const G = 16;
-  const w = sim({ gridSize: G, riders: 0, cabs: 1 }).pool;
+test('Dijkstra equals brute force (Bellman-Ford) on a slow right half with a cordon', () => {
   const rnd = (n) => Math.floor(Math.random() * n);
-  for (let k = 0; k < 40; k++) {
-    const R = 1 + rnd(5), cx = rnd(G), cy = rnd(G);
-    w.zone = { x1: Math.max(0, cx - R), x2: Math.min(G - 1, cx + R), y1: Math.max(0, cy - R), y2: Math.min(G - 1, cy + R) };
-    // BFS from one free corner over free corners.
-    let ax, ay;
-    do { ax = rnd(G); ay = rnd(G); } while (w.inZone(ax, ay));
-    const D = new Array(G * G).fill(-1), q = [[ax, ay]];
-    D[ax * G + ay] = 0;
-    while (q.length) {
-      const [x, y] = q.shift();
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= G || ny >= G || w.inZone(nx, ny) || D[nx * G + ny] >= 0) continue;
-        D[nx * G + ny] = D[x * G + y] + 1;
-        q.push([nx, ny]);
+  for (let trial = 0; trial < 12; trial++) {
+    const G = 10 + rnd(8), k = 1 + rnd(4) * 0.25;
+    const R = 1 + rnd(3), cx = rnd(G), cy = rnd(G);
+    const z = trial % 3 === 0 ? null : { x1: Math.max(0, cx - R), x2: Math.min(G - 1, cx + R), y1: Math.max(0, cy - R), y2: Math.min(G - 1, cy + R) };
+    const inZ = (x, y) => !!z && x >= z.x1 && x <= z.x2 && y >= z.y1 && y <= z.y2;
+    let tx, ty;
+    do { tx = rnd(G); ty = rnd(G); } while (inZ(tx, ty));
+    // Bellman-Ford: relax every street until nothing changes.
+    const D = new Array(G * G).fill(Infinity);
+    D[tx * G + ty] = 0;
+    for (let changed = true; changed;) {
+      changed = false;
+      for (let x = 0; x < G; x++) for (let y = 0; y < G; y++) {
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= G || ny >= G) continue;
+          // street (x,y) -> (nx,ny)
+          const c = S.edgeW(k, G, x, y, nx, ny) + (inZ(nx, ny) && !inZ(x, y) ? 1e5 : 0);
+          if (D[nx * G + ny] + c < D[x * G + y] - 1e-9) { D[x * G + y] = D[nx * G + ny] + c; changed = true; }
+        }
       }
     }
-    for (let bx = 0; bx < G; bx++) for (let by = 0; by < G; by++) {
-      if (w.inZone(bx, by)) continue;
-      assert.strictEqual(w.dist(ax, ay, bx, by), D[bx * G + by], `zone ${JSON.stringify(w.zone)} (${ax},${ay})->(${bx},${by})`);
-    }
+    const row = S.dijkstraTo(G, k, z, tx, ty);
+    for (let i = 0; i < G * G; i++) assert(Math.abs(row[i] - D[i]) < 1e-9, `G=${G} k=${k} node ${i}: ${row[i]} vs ${D[i]}`);
   }
+});
+
+test('fastest routes are never slower than the original L-shaped routes', () => {
+  const s = sim({ riders: 0, cabs: 1, threatsPer10Min: 0 });
+  const w = s.pool, G = w.cfg.gridSize;
+  const fast = Object.assign(Object.create(w), { cfg: Object.assign({}, w.cfg, { fastRoutes: 1 }) });
+  let faster = 0;
+  for (let i = 0; i < 400; i++) {
+    const a = [Math.floor(Math.random() * G), Math.floor(Math.random() * G), Math.floor(Math.random() * G), Math.floor(Math.random() * G)];
+    const f = fast.dist(...a), l = w.lCost(...a);
+    assert(f <= l + 1e-9, `fastest ${f} > L-route ${l}`);
+    if (f < l - 1e-9) faster++;
+  }
+  assert(faster > 0, 'with a slow right half some trips should be faster');
 });
 
 test('bomb threats: cabs never drive into a closed cordon, no stop inside it, both cities hit alike', () => {

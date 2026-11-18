@@ -51,11 +51,16 @@
     </aside>
 
     <main>
+      <div class="compare-switch" role="group" aria-label="Right-hand map" id="compare-switch">
+        <span>Right-hand map:</span>
+        <button class="seg" type="button" data-view="orig" aria-pressed="true">Original prototype (given)</button>
+        <button class="seg" type="button" data-view="base" aria-pressed="false">No Pool</button>
+      </div>
       <section class="maps">
         <figure class="map-card">
           <figcaption class="map-head">
             <div>
-              <h2>With Pool</h2>
+              <h2 id="title-pool">With Pool</h2>
               <p id="sub-pool">Opt-in riders can share a cab</p>
             </div>
             <div class="map-stats" id="stats-pool"></div>
@@ -65,8 +70,8 @@
         <figure class="map-card">
           <figcaption class="map-head">
             <div>
-              <h2>No Pool <span class="tag">baseline</span></h2>
-              <p>Same riders and cabs, everyone rides solo</p>
+              <h2 id="title-base">No Pool <span class="tag">baseline</span></h2>
+              <p id="sub-base">Same riders and cabs, everyone rides solo</p>
             </div>
             <div class="map-stats" id="stats-base"></div>
           </figcaption>
@@ -86,6 +91,7 @@
         <li><i class="sw reroute"></i>Bold route: rerouted mid-ride</li>
         <li><i class="sw lost"></i>Rider gave up</li>
         <li><i class="sw cordon"></i>Bomb-threat cordon (closed)</li>
+        <li><i class="sw slow"></i><span id="legend-slow">Slower side (+25% travel time)</span></li>
         <li class="legend-hint">Hover a cab for its riders</li>
       </ul>
 

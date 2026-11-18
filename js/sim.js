@@ -85,14 +85,19 @@ function definePoolSim(root) {
     unmatchedDiscount: 25, // % off for a pool rider who never shared
     poolFirst: 20,        // s of matching cost a shared option may exceed an idle cab by and still win
     netFloor: 1,          // no job pays the driver less than its running cost
+    fastRoutes: 1,        // drive the fastest route (Dijkstra), not the original L-shaped one
+    // City: the right half is congested; every street there takes this much longer.
+    rightSlow: 25,        // % extra travel time per block on the right half
     // Incidents: random bomb threats that close a square cordon for a while.
-    threatsPer10Min: 0,   // average threats per 10 simulated minutes (0 = none)
-    threatRadius: 4,      // cordon half-width, blocks
-    threatDuration: 60,   // seconds the cordon stays closed
+    threatsPer10Min: 3,   // average threats per 10 simulated minutes (0 = none)
+    threatRadius: 6,      // cordon half-width, blocks
+    threatDuration: 90,   // seconds the cordon stays closed
   };
 
   // The original prototype's rules: every enhancement switched off.
-  var ORIGINAL_RULES = { driverGuarantee: 0, dynamicPremium: 0, matchedDiscount: 0, poolFirst: 0, netFloor: 0 };
+  var ORIGINAL_RULES = { driverGuarantee: 0, dynamicPremium: 0, matchedDiscount: 0, poolFirst: 0, netFloor: 0, fastRoutes: 0 };
+  // The original prototype's city: uniform streets and no incidents.
+  var ORIGINAL_CITY = { rightSlow: 0, threatsPer10Min: 0 };
 
   var DT = 0.1;               // simulation step, seconds
   var DISPATCH_EVERY = 1;     // matching batch interval, seconds
@@ -139,7 +144,8 @@ function definePoolSim(root) {
     cfg.reassign = cfg.reassign ? 1 : 0;
     cfg.cabSpeed = Math.max(0.1, cfg.cabSpeed);
     cfg.seed = Math.round(cfg.seed) >>> 0;
-    ['driverGuarantee', 'dynamicPremium', 'matchedDiscount', 'netFloor'].forEach(function (k) {
+    cfg.rightSlow = Math.max(0, Math.min(200, cfg.rightSlow));
+    ['driverGuarantee', 'dynamicPremium', 'matchedDiscount', 'netFloor', 'fastRoutes'].forEach(function (k) {
       cfg[k] = cfg[k] ? 1 : 0;
     });
     cfg.sharedDiscount = Math.max(0, Math.min(90, cfg.sharedDiscount));
@@ -187,28 +193,101 @@ function definePoolSim(root) {
       if (t >= cfg.duration) break;
       var cx = Math.floor(rng() * G), cy = Math.floor(rng() * G);
       if (out.length && t < out[out.length - 1].until) continue;
-      out.push({
-        at: t, until: t + cfg.threatDuration, x: cx, y: cy,
+      out.push(cordon(t, cx, cy));
+    }
+    // Threats on: always at least one per run, early enough to watch it play out.
+    if (rate > 0 && !out.length) out.push(cordon(rng() * cfg.duration * 0.6, Math.floor(rng() * G), Math.floor(rng() * G)));
+    return out;
+    function cordon(at, cx, cy) {
+      return {
+        at: at, until: at + cfg.threatDuration, x: cx, y: cy,
         x1: Math.max(0, cx - R), x2: Math.min(G - 1, cx + R),
         y1: Math.max(0, cy - R), y2: Math.min(G - 1, cy + R),
-      });
+      };
     }
-    return out;
   }
 
-  // Extra blocks to go around a cordon spanning [lo, hi] when going from a
-  // to b along the other axis: detour via the free street just outside it.
-  function aroundExtra(a, b, lo, hi, G) {
-    var best = Infinity, straight = Math.abs(a - b);
-    if (lo - 1 >= 0) best = Math.min(best, Math.abs(a - lo + 1) + Math.abs(b - lo + 1) - straight);
-    if (hi + 1 <= G - 1) best = Math.min(best, Math.abs(a - hi - 1) + Math.abs(b - hi - 1) - straight);
-    return best;
+  // ---------------------------------------------------------------- road network
+  //
+  // Travel cost is measured in "block-time": a street on the left half costs 1,
+  // a street on the right half costs k = 1 + rightSlow/100. A street belongs to
+  // the right half if its midpoint is at x >= G/2. Time = cost / cab speed.
+
+  function edgeW(k, G, ax, ay, bx, by) {
+    if (ay === by) return 2 * Math.min(ax, bx) + 1 >= G ? k : 1; // east-west street
+    return 2 * ax >= G ? k : 1;                                   // north-south street
+  }
+
+  var PEN = 1e5; // cost of driving into a closed cordon from outside (never worth it)
+
+  // Dijkstra on the street grid, run backwards from the target, so one run
+  // gives the fastest cost from every corner to that target. Entering a closed
+  // cordon from outside costs PEN; a cab already inside can still drive out.
+  function dijkstraTo(G, k, z, tx, ty) {
+    var N = G * G, D = new Float64Array(N).fill(Infinity);
+    var inZ = function (x, y) { return !!z && x >= z.x1 && x <= z.x2 && y >= z.y1 && y <= z.y2; };
+    var hk = [], hv = []; // binary min-heap of (cost, node)
+    function push(key, v) {
+      var i = hk.length; hk.push(key); hv.push(v);
+      while (i > 0) {
+        var p = (i - 1) >> 1;
+        if (hk[p] <= key) break;
+        hk[i] = hk[p]; hv[i] = hv[p]; i = p;
+      }
+      hk[i] = key; hv[i] = v;
+    }
+    function pop() {
+      var top = hv[0], key = hk.pop(), v = hv.pop(), n = hk.length, i = 0;
+      if (n) {
+        for (;;) {
+          var l = 2 * i + 1, r = l + 1, m = i, mk = key;
+          if (l < n && hk[l] < mk) { m = l; mk = hk[l]; }
+          if (r < n && hk[r] < mk) { m = r; mk = hk[r]; }
+          if (m === i) break;
+          hk[i] = hk[m]; hv[i] = hv[m]; i = m;
+        }
+        hk[i] = key; hv[i] = v;
+      }
+      return top;
+    }
+    D[tx * G + ty] = 0;
+    push(0, tx * G + ty);
+    var nb = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    while (hk.length) {
+      var dv = hk[0], v = pop();
+      if (dv > D[v]) continue;
+      var vx = (v / G) | 0, vy = v - vx * G, vIn = inZ(vx, vy);
+      for (var j = 0; j < 4; j++) {
+        var ux = vx + nb[j][0], uy = vy + nb[j][1];
+        if (ux < 0 || uy < 0 || ux >= G || uy >= G) continue;
+        // Street u -> v (we search backwards from the target).
+        var c = edgeW(k, G, ux, uy, vx, vy) + (vIn && !inZ(ux, uy) ? PEN : 0);
+        var u = ux * G + uy, nd = dv + c;
+        if (nd < D[u]) { D[u] = nd; push(nd, u); }
+      }
+    }
+    return D;
+  }
+
+  // Fastest-cost rows, shared by every world in this thread (pool, no-pool and
+  // the original-rules replay all see the same streets and cordons). Keyed by
+  // grid, slowness and cordon; only the last few road states are kept.
+  var ROWS = { keys: [], maps: {} };
+  function rowsFor(G, k, z) {
+    var key = G + '|' + k + '|' + (z ? z.x1 + ',' + z.x2 + ',' + z.y1 + ',' + z.y2 : '-');
+    if (!ROWS.maps[key]) {
+      ROWS.maps[key] = new Map();
+      ROWS.keys.push(key);
+      if (ROWS.keys.length > 4) delete ROWS.maps[ROWS.keys.shift()];
+    }
+    return ROWS.maps[key];
   }
 
   function World(cfg, scenario, poolEnabled) {
     this.cfg = cfg;
     this.poolEnabled = poolEnabled;
     this.speed = cfg.cabSpeed;
+    this.k = 1 + cfg.rightSlow / 100;   // cost of a street on the slow right half
     this.X = cfg.driverPremium / 100;   // premium in force now (moves if dynamicPremium)
     this.Y = cfg.poolDiscount / 100;
     this.Yu = cfg.matchedDiscount ? cfg.unmatchedDiscount / 100 : this.Y; // charged upfront
@@ -240,6 +319,7 @@ function definePoolSim(root) {
       affected: 0,        // riders whose trip was under way (or requested) while a cordon was closed
       movedStops: 0,      // pickups/drop-offs moved out of a cordon to its edge
       threatPay: 0,       // $ paid to drivers for empty detours around a cordon
+      threatDelay: 0,     // s of delay cordons directly added to riders' planned trips
     };
     this.threats = scenario.threats;
     this.threatIdx = 0;
@@ -283,7 +363,8 @@ function definePoolSim(root) {
         reassigned: 0,          // times moved to a closer cab before pickup
         joinedOccupied: false,  // boarded a cab that already had a rider
         hosted: false,          // someone boarded while this rider was aboard
-        affected: false,        // a bomb-threat cordon was closed during their trip
+        affected: false,        // a bomb-threat cordon actually delayed their trip
+        capTime: direct / speed, // solo trip time the 1.5x promise is measured against (set on request)
       };
     });
   }
@@ -298,7 +379,8 @@ function definePoolSim(root) {
     while (this.arrivalIdx < this.riders.length && this.riders[this.arrivalIdx].requestAt <= this.t) {
       var r = this.riders[this.arrivalIdx++];
       r.state = 'waiting';
-      if (this.zone) this.affect(r);
+      r.capTime = this.openDist(r.ox, r.oy, r.dx, r.dy) / this.speed;
+      if (this.zone) this.affectOnRequest(r);
       this.queue.push(r);
       this.totals.requested++;
     }
@@ -321,42 +403,54 @@ function definePoolSim(root) {
     return !!z && x >= z.x1 && x <= z.x2 && y >= z.y1 && y <= z.y2;
   };
 
-  // Shortest driving distance. With no cordon it is the Manhattan distance.
-  // A single rectangular cordon only lengthens a trip when it blocks every
-  // shortest path: it covers the whole span between the two points along one
-  // axis and sits strictly between them along the other. Then the cab goes
-  // round via the nearest free street beside it. (From inside the cordon a
-  // cab simply drives straight out.)
-  World.prototype.dist = function (ax, ay, bx, by) {
-    var d = manhattan(ax, ay, bx, by), z = this.zone, G = this.cfg.gridSize;
-    if (!z || this.inZone(ax, ay) || this.inZone(bx, by)) return d;
-    if (Math.min(ax, bx) >= z.x1 && Math.max(ax, bx) <= z.x2 && Math.min(ay, by) < z.y1 && Math.max(ay, by) > z.y2) {
-      return d + aroundExtra(ax, bx, z.x1, z.x2, G);
-    }
-    if (Math.min(ay, by) >= z.y1 && Math.max(ay, by) <= z.y2 && Math.min(ax, bx) < z.x1 && Math.max(ax, bx) > z.x2) {
-      return d + aroundExtra(ay, by, z.y1, z.y2, G);
-    }
-    return d;
+  // Cost of the original L-shaped route: the east-west leg first, then the
+  // north-south leg at the target's column. With uniform streets this is the
+  // Manhattan distance.
+  World.prototype.lCost = function (ax, ay, bx, by) {
+    var k = this.k, G = this.cfg.gridSize, dx = Math.abs(ax - bx), dy = Math.abs(ay - by);
+    if (k === 1) return dx + dy;
+    var firstSlow = Math.ceil((G - 1) / 2); // first column whose eastward street is slow
+    var slowX = Math.max(0, Math.max(ax, bx) - Math.max(Math.min(ax, bx), firstSlow));
+    return dx + slowX * (k - 1) + dy * (2 * bx >= G ? k : 1);
   };
 
-  // Next street to drive. No cordon: the original L-shaped route (x leg, then
-  // y leg). With a cordon: the first neighbour on a shortest path that does
-  // not enter the cordon (a cab already inside may drive out through it).
+  // Fastest-cost row to a target corner (see dijkstraTo), cached.
+  World.prototype.row = function (bx, by) {
+    var G = this.cfg.gridSize, rows = rowsFor(G, this.k, this.zone), id = bx * G + by;
+    var r = rows.get(id);
+    if (!r) { r = dijkstraTo(G, this.k, this.zone, bx, by); rows.set(id, r); }
+    return r;
+  };
+
+  // Driving cost from a to b, in block-time. Original routes: the L-shaped
+  // route. Fastest routes, or whenever a cordon is closed: Dijkstra.
+  World.prototype.dist = function (ax, ay, bx, by) {
+    if (!this.cfg.fastRoutes && !this.zone) return this.lCost(ax, ay, bx, by);
+    return this.row(bx, by)[ax * this.cfg.gridSize + ay];
+  };
+
+  // Next street to drive, with its cost w. Original routes: x leg, then y leg.
+  // Otherwise the neighbour on the fastest path (ties: toward the target first).
+  // `away` marks a step away from the target while a cordon is closed, i.e. a
+  // detour the driver is paid for.
   World.prototype.nextStep = function (cab, s) {
-    var x = cab.x, y = cab.y, sx = Math.sign(s.x - x), sy = Math.sign(s.y - y);
-    if (this.zone) {
-      var d = this.dist(x, y, s.x, s.y), inside = this.inZone(x, y), G = this.cfg.gridSize;
-      var moves = [[sx, 0], [0, sy], [1, 0], [-1, 0], [0, 1], [0, -1]];
-      for (var i = 0; i < moves.length; i++) {
-        var nx = x + moves[i][0], ny = y + moves[i][1];
-        if ((nx === x && ny === y) || nx < 0 || ny < 0 || nx >= G || ny >= G) continue;
-        if (!inside && this.inZone(nx, ny)) continue;
-        if (this.dist(nx, ny, s.x, s.y) === d - 1) {
-          return { x: nx, y: ny, away: manhattan(nx, ny, s.x, s.y) > manhattan(x, y, s.x, s.y) };
-        }
-      }
+    var x = cab.x, y = cab.y, G = this.cfg.gridSize, k = this.k;
+    var sx = Math.sign(s.x - x), sy = Math.sign(s.y - y), nx, ny;
+    if (!this.cfg.fastRoutes && !this.zone) {
+      nx = sx ? x + sx : x; ny = sx ? y : y + sy;
+      return { x: nx, y: ny, w: edgeW(k, G, x, y, nx, ny), away: false };
     }
-    return sx ? { x: x + sx, y: y } : { x: x, y: y + sy };
+    var row = this.row(s.x, s.y), inside = this.inZone(x, y), best = null, bestD = Infinity;
+    var moves = [[sx, 0], [0, sy], [1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (var i = 0; i < moves.length; i++) {
+      nx = x + moves[i][0]; ny = y + moves[i][1];
+      if ((nx === x && ny === y) || nx < 0 || ny < 0 || nx >= G || ny >= G) continue;
+      var w = edgeW(k, G, x, y, nx, ny);
+      var d = w + (!inside && this.inZone(nx, ny) ? PEN : 0) + row[nx * G + ny];
+      if (d < bestD - 1e-9) { bestD = d; best = { x: nx, y: ny, w: w }; }
+    }
+    best.away = !!this.zone && manhattan(best.x, best.y, s.x, s.y) > manhattan(x, y, s.x, s.y);
+    return best;
   };
 
   // Nearest street corner just outside the cordon.
@@ -369,26 +463,59 @@ function definePoolSim(root) {
     return best;
   };
 
-  // A rider caught by a cordon: pickup and drop-off inside it move to its edge
-  // (the rider walks out; nobody is driven into a closed area).
-  World.prototype.affect = function (r) {
+  // A cordon delayed this rider: count them, and measure their 1.5x promise
+  // against their solo route around the cordon.
+  World.prototype.markAffected = function (r) {
     if (!r.affected) { r.affected = true; this.totals.affected++; }
-    var p;
+    r.capTime = Math.max(r.capTime, this.dist(r.ox, r.oy, r.dx, r.dy) / this.speed);
+  };
+
+  // Driving cost as if no cordon were closed.
+  World.prototype.openDist = function (ax, ay, bx, by) {
+    var z = this.zone;
+    this.zone = null;
+    var d = this.dist(ax, ay, bx, by);
+    this.zone = z;
+    return d;
+  };
+
+  // Pickup and drop-off inside a closed cordon move to its edge (the rider
+  // walks out; nobody is driven into a closed area). Returns true if moved.
+  World.prototype.moveStopsOut = function (r) {
+    var p, moved = false;
     if (r.state !== 'riding' && this.inZone(r.ox, r.oy)) {
-      p = this.safePoint(r.ox, r.oy); r.ox = p[0]; r.oy = p[1]; this.totals.movedStops++;
+      p = this.safePoint(r.ox, r.oy); r.ox = p[0]; r.oy = p[1]; this.totals.movedStops++; moved = true;
     }
     if (this.inZone(r.dx, r.dy)) {
-      p = this.safePoint(r.dx, r.dy); r.dx = p[0]; r.dy = p[1]; this.totals.movedStops++;
+      p = this.safePoint(r.dx, r.dy); r.dx = p[0]; r.dy = p[1]; this.totals.movedStops++; moved = true;
+    }
+    return moved;
+  };
+
+  // A rider who requests while a cordon is closed is affected if a stop had to
+  // move or the cordon makes their solo route longer.
+  World.prototype.affectOnRequest = function (r) {
+    var open = this.openDist(r.ox, r.oy, r.dx, r.dy);
+    var moved = this.moveStopsOut(r), now = this.dist(r.ox, r.oy, r.dx, r.dy);
+    if (moved || now > open + EPS) {
+      this.markAffected(r);
+      if (now > open + EPS) this.totals.threatDelay += (now - open) / this.speed;
     }
   };
 
+  // A cordon closes. Riders count as affected only if it actually delays them:
+  // a stop had to move, or their cab's planned pickup or drop-off got later.
   World.prototype.startThreat = function (th) {
-    this.zone = th;
     this.totals.threats++;
-    var i, j, c;
+    var i, j, c, r, id;
+    var before = this.cabs.map(function (cab) {
+      return cab.plan.length ? this.evalPlan(cab, cab.plan, null, false) : null;
+    }, this);
+    this.zone = th;
     for (i = 0; i < this.riders.length; i++) {
-      var r = this.riders[i];
-      if (r.state === 'waiting' || r.state === 'assigned' || r.state === 'riding') this.affect(r);
+      r = this.riders[i];
+      if (r.state === 'waiting') this.affectOnRequest(r); // not in a cab yet: same test as a new request
+      else if ((r.state === 'assigned' || r.state === 'riding') && this.moveStopsOut(r)) this.markAffected(r);
     }
     for (i = 0; i < this.cabs.length; i++) {
       c = this.cabs[i];
@@ -398,7 +525,16 @@ function definePoolSim(root) {
         if (s.type === 'pickup') { s.x = s.rider.ox; s.y = s.rider.oy; } else { s.x = s.rider.dx; s.y = s.rider.dy; }
       }
       c.planVersion++;
-      if (c.onboard.length) c.rerouteVersion++;
+      var after = this.evalPlan(c, c.plan, null, false), old = before[i], later = false;
+      for (j = 0; j < c.riders.length; j++) {
+        id = c.riders[j].id;
+        if ((after.picks[id] != null && after.picks[id] > old.picks[id] + EPS) || after.drops[id] > old.drops[id] + EPS) {
+          this.markAffected(c.riders[j]);
+          this.totals.threatDelay += Math.max(0, after.drops[id] - old.drops[id]);
+          later = true;
+        }
+      }
+      if (later && c.onboard.length) c.rerouteVersion++;
     }
   };
 
@@ -409,7 +545,7 @@ function definePoolSim(root) {
   };
 
   World.prototype.advance = function (cab) {
-    var budget = this.speed * DT; // blocks this step
+    var budget = this.speed * DT; // block-time this step (a slow street uses more of it)
     var now = this.t;
     for (var guard = 0; guard < 10000; guard++) {
       if (!cab.next) {
@@ -423,9 +559,12 @@ function definePoolSim(root) {
         cab.next = this.nextStep(cab, cab.plan[0]);
         cab.progress = 0;
       }
-      var move = Math.min(1 - cab.progress, budget);
+      // move = block-time spent; frac = share of this street covered.
+      var w = cab.next.w;
+      var move = Math.min((1 - cab.progress) * w, budget);
+      var frac = w === 1 ? move : move / w;
       var sec = move / this.speed;
-      this.accrue(cab, sec, move);
+      this.accrue(cab, sec, frac);
       // Empty detour around a cordon: each block driven away from the target
       // costs two blocks (out and back), and the platform pays for both.
       if (cab.next.away && !cab.onboard.length) {
@@ -436,7 +575,7 @@ function definePoolSim(root) {
         this.totals.threatPay += tp;
         if (cab.job) cab.job.pay += tp;
       }
-      cab.progress += move;
+      cab.progress += frac;
       budget -= move;
       now += sec;
       if (cab.progress >= 1 - EPS) {
@@ -579,8 +718,8 @@ function definePoolSim(root) {
           this.totals.discount += r.refund;
           this.totals.refunds += r.refund;
         }
-        cab.trip.soloPay += this.cfg.driverRate * r.est;
-        cab.trip.extraSec += (now - r.pickupAt) - r.est;
+        cab.trip.soloPay += this.cfg.driverRate * r.capTime;  // the solo trip on these streets
+        cab.trip.extraSec += (now - r.pickupAt) - r.capTime;
         if (!cab.onboard.length) {
           // Empty again: settle the trip (pay floor), then the job (pickup
           // cover). A busy cab with more riders lined up starts a new job
@@ -602,7 +741,7 @@ function definePoolSim(root) {
   // mid-edge finishes the edge first.
   World.prototype.reach = function (cab, x, y) {
     return cab.next
-      ? 1 - cab.progress + this.dist(cab.next.x, cab.next.y, x, y)
+      ? (1 - cab.progress) * cab.next.w + this.dist(cab.next.x, cab.next.y, x, y)
       : this.dist(cab.x, cab.y, x, y);
   };
 
@@ -614,7 +753,7 @@ function definePoolSim(root) {
     var maxPick = this.cfg.pingRadius / speed;
     var t = this.t, x, y;
     if (cab.next) {
-      t += (1 - cab.progress) / speed;
+      t += (1 - cab.progress) * cab.next.w / speed;
       x = cab.next.x; y = cab.next.y;
     } else {
       x = cab.x; y = cab.y;
@@ -640,8 +779,7 @@ function definePoolSim(root) {
       } else {
         load--;
         var pt = r.state === 'riding' ? r.pickupAt : picks[r.id];
-        // Cap vs the solo route as it is now (a cordon can make it longer).
-        if (check && t - pt > limit * Math.max(r.est, this.dist(r.ox, r.oy, r.dx, r.dy) / speed) + EPS) return null;
+        if (check && t - pt > limit * r.capTime + EPS) return null;
         drops[r.id] = t;
       }
     }
@@ -916,6 +1054,9 @@ function definePoolSim(root) {
   var api = {
     DEFAULTS: DEFAULTS,
     ORIGINAL_RULES: ORIGINAL_RULES,
+    ORIGINAL_CITY: ORIGINAL_CITY,
+    dijkstraTo: dijkstraTo,
+    edgeW: edgeW,
     DYN_X_BONUS: DYN_X_BONUS,
     DT: DT,
     EPS: EPS,

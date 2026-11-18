@@ -17,6 +17,7 @@
   --pool1: #1baf7a;
   --shared: #eb6834;
   --idle: #b4b2aa;
+  --slow: rgba(214, 140, 40, 0.10);
   --base-series: #8f8d86;
   --map-street: #fcfcfb;
   --map-block: #e8e7e2;
@@ -55,6 +56,7 @@
     --pool1: #199e70;
     --shared: #e0622f;
     --idle: #5c5b56;
+    --slow: rgba(230, 160, 60, 0.10);
     --base-series: #8f8d86;
     --map-street: #1a1a19;
     --map-block: #262624;
@@ -248,6 +250,12 @@ input:disabled { cursor: not-allowed; opacity: 0.5; }
 .sw.lost::before, .sw.lost::after { content: ""; position: absolute; left: 4px; top: -1px; width: 2px; height: 12px; background: var(--bad); border-radius: 1px; }
 .sw.lost::before { transform: rotate(45deg); }
 .sw.lost::after { transform: rotate(-45deg); }
+.sw.slow { width: 14px; height: 10px; border-radius: 2px; background: var(--slow); border: 1px solid color-mix(in srgb, var(--ink-2) 25%, transparent); }
+.compare-switch { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; }
+.compare-switch span { margin-right: 4px; }
+.compare-switch .seg { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--panel); color: var(--ink-2); cursor: pointer; }
+.compare-switch .seg[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.compare-switch .seg:disabled { opacity: 0.45; cursor: default; }
 .sw.cordon { width: 12px; height: 12px; border: 1.5px dashed var(--bad); background: color-mix(in srgb, var(--bad) 16%, transparent); }
 .map-stats .threat-on b, .map-stats .threat-on span { color: var(--bad); }
 .sw.reroute { width: 14px; height: 3px; border-radius: 2px; background: var(--pool1); }

@@ -642,14 +642,6 @@
         ['Cab-seconds with 2 aboard', bw.time.two, pw.time.two, fmt.int, 'int', null],
       ]],
     ];
-    if (pw.threats || bw.threats) {
-      groups.push(['Bomb threats (same in both cities)', [
-        ['Threats (cordons closed)', bw.threats, pw.threats, fmt.int, 'int', null],
-        ['Riders caught by a cordon', bw.affected, pw.affected, fmt.int, 'int', null],
-        ['Pickups / drop-offs moved to the cordon edge', bw.movedStops, pw.movedStops, fmt.int, 'int', null],
-        ['Paid to drivers for empty detours', bw.threatPay, pw.threatPay, fmt.money, 'money', null],
-      ]]);
-    }
     return tableHtml(groups, 'No Pool', 'With Pool');
   }
 
@@ -728,6 +720,21 @@
       + '<h4 class="enh-sub">Does it hold in other cities?</h4>'
       + '<p class="enh-lede">The same settings on 12 other random cities (different riders and cab positions), original rules vs enhanced, run in the background.</p>'
       + '<div id="validate-body"><div class="chart-empty" id="validate-progress">Checking 12 other random cities…</div></div></section>';
+  }
+
+  // Bomb threats in this run, measured against the same city with none.
+  function threatSection(s) {
+    var t = s.threats;
+    if (!t) return '';
+    return '<section class="rsec"><h3>Bomb threats in this run</h3>'
+      + '<p class="enh-lede">' + plural(t.threats, 'cordon') + ' closed (' + s.cfg.threatRadius + ' blocks each way, ' + s.cfg.threatDuration + ' s). '
+      + 'What they did to the With Pool city:</p>'
+      + '<div class="facts facts4">'
+      + fact('Riders delayed', fmt.int(t.affected), 'a cordon moved their stop or made their route longer')
+      + fact('Delay added', fmt.sec(t.delay, 0), (t.avgDelay == null ? '' : fmt.sec(t.avgDelay) + ' per delayed rider, ') + 'from detours around the cordon')
+      + fact('Stops moved to the cordon edge', fmt.int(t.movedStops), 'riders walked out to be picked up or dropped off')
+      + fact('Detour pay to drivers', fmt.money(t.threatPay), 'empty driving around a cordon, paid by the platform')
+      + '</div></section>';
   }
 
   // Win counts across other random cities (from validatePoint).
@@ -819,6 +826,8 @@
       + '</section>'
 
       + enhancementSection(s)
+
+      + threatSection(s)
 
       + '<section class="rsec"><h3>Passengers</h3><div class="grid2">'
       + '<figure><figcaption><b>Time in the car vs. original estimate</b><span>Completed pool trips. ' + fmt.pct(p.withinCap, 0) + ' within the promise; '

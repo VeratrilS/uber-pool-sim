@@ -30,6 +30,7 @@
         { key: 'matchedDiscount', label: 'Bigger discount only if matched', toggle: true, hint: 'Pool riders pay the never-matched discount upfront and get refunded up to the matched discount at drop-off if they actually shared.' },
         { key: 'sharedDiscount', label: 'Discount if matched', unit: '%', min: 0, max: 90, step: 5, hint: 'For riders who actually shared. Higher than the old flat Y, to reward sharing.' },
         { key: 'unmatchedDiscount', label: 'Discount if never matched', unit: '%', min: 0, max: 90, step: 5, hint: 'For opting in and accepting possible detours. At most the matched discount.' },
+        { key: 'fastRoutes', label: 'Fastest routes (Dijkstra)', toggle: true, hint: 'Cabs take the quickest path over the real street costs (slow right side, cordons). Off: the original L-shaped route.' },
         { key: 'netFloor', label: 'Pickup cover (no net loss)', toggle: true, hint: 'If a job (pickup drive + ride) pays the driver less than its running cost, the platform pays the difference. No driver ends a job below zero. Both cities.' },
         { key: 'poolFirst', label: 'Pool-first matching', unit: 's', min: 0, max: 120, step: 5, hint: 'A pool rider joins a cab already on a pool trip unless that costs more than this many rider-seconds over the best idle cab. Keeps idle cabs free and more riders share. 0 = cheapest option wins (original).' },
       ],
@@ -55,6 +56,7 @@
         { key: 'cabSpeed', label: 'Cab speed', unit: 'blocks/s', min: 0.5, max: 5, step: 0.5, decimals: 1 },
         { key: 'fareRate', label: 'Standard fare', unit: '$/s', min: 0.05, max: 2, step: 0.05, decimals: 2, hint: 'Per second of the solo estimate. Charged at pickup.' },
         { key: 'driverRate', label: 'Driver pay', unit: '$/s', min: 0.05, max: 2, step: 0.05, decimals: 2, hint: 'Per second with a rider aboard. Pickup driving is unpaid.' },
+        { key: 'rightSlow', label: 'Right side slower', unit: '%', min: 0, max: 100, step: 5, hint: 'Congestion: every street on the right half of the city takes this much longer. Shaded on the map.' },
         { key: 'costPerBlock', label: 'Driver running cost', unit: '$/block', min: 0, max: 0.5, step: 0.01, decimals: 2, hint: 'Fuel and wear per block driven, empty or not.' },
       ],
     },
@@ -73,6 +75,8 @@
     defaults: $('btn-defaults'), speed: $('speed'), status: $('status'), clock: $('clock'),
     clockTotal: $('clock-total'), progress: $('progress'),
     statsPool: $('stats-pool'), statsBase: $('stats-base'), subPool: $('sub-pool'),
+    titlePool: $('title-pool'), titleBase: $('title-base'), subBase: $('sub-base'),
+    compareSwitch: $('compare-switch'), legendSlow: $('legend-slow'),
     live: $('live'), liveEnh: $('live-enh'), report: $('report'), reportPanel: $('report-panel'), tooltip: $('tooltip'),
   };
 
@@ -87,6 +91,7 @@
     effSpeed: null,
     summary: null,
     hover: null, // { view, cab }
+    rightView: 'orig', // right map: 'orig' (original prototype) or 'base' (No Pool)
   };
 
   var views = {
@@ -225,10 +230,39 @@
     state.summary = null;
     state.hover = null;
     views.pool.setWorld(state.sim.pool);
-    views.base.setWorld(state.sim.base);
+    views.base.setWorld(rightWorld());
+    syncCompareView();
     setStatus('ready');
     updateUi();
   }
+
+  // ------------------------------------------------------------ right-hand map
+
+  // The right map shows either the original prototype (same city, original
+  // rules) or the No Pool city. Original needs at least one enhancement on.
+  function showingOriginal() { return state.rightView === 'orig' && !!state.orig; }
+  function rightWorld() { return showingOriginal() ? state.orig.pool : state.sim.base; }
+
+  function syncCompareView() {
+    var orig = showingOriginal();
+    els.titlePool.textContent = orig ? 'Enhanced model' : 'With Pool';
+    els.titleBase.innerHTML = orig ? 'Original prototype <span class="tag">given</span>' : 'No Pool <span class="tag">baseline</span>';
+    els.subBase.textContent = orig ? 'Same city and riders, the original rules' : 'Same riders and cabs, everyone rides solo';
+    els.compareSwitch.querySelectorAll('[data-view]').forEach(function (b) {
+      var v = b.getAttribute('data-view');
+      b.setAttribute('aria-pressed', String(v === (orig ? 'orig' : 'base')));
+      if (v === 'orig') b.disabled = !state.orig;
+    });
+  }
+
+  els.compareSwitch.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-view]');
+    if (!b || b.disabled) return;
+    state.rightView = b.getAttribute('data-view');
+    views.base.setWorld(rightWorld());
+    syncCompareView();
+    updateUi();
+  });
 
   function start() {
     if (state.status === 'finished') newRun();
@@ -376,9 +410,10 @@
     els.subPool.textContent = cfg.poolOptIn + '% opt in · cap ' + cfg.maxDetour.toFixed(2) + '× · X ' + Math.round(sim.pool.X * 100) + '%'
       + (cfg.dynamicPremium ? ' (dynamic)' : '');
 
-    var lp = sim.pool.live(), lb = sim.base.live();
+    var lp = sim.pool.live(), lb = sim.base.live(), rw = rightWorld();
     els.statsPool.innerHTML = mapStats(lp, true) + threatStat(sim.pool);
-    els.statsBase.innerHTML = mapStats(lb, false) + threatStat(sim.base);
+    els.statsBase.innerHTML = mapStats(rw.live(), rw.poolEnabled) + threatStat(rw);
+    els.legendSlow.textContent = cfg.rightSlow ? 'Slower side (+' + cfg.rightSlow + '% travel time)' : 'No slower side';
 
     var ps = poolRiderStats(sim.pool);
     var payDelta = lp.driverPay - lb.driverPay;

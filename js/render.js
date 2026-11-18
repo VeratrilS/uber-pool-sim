@@ -12,6 +12,7 @@
     return {
       street: v('--map-street'),
       block: v('--map-block'),
+      slow: v('--slow'),
       solo: v('--solo'),
       pool1: v('--pool1'),
       shared: v('--shared'),
@@ -92,6 +93,12 @@
       }
     }
     ctx.fill();
+    // Slow right half (congestion): a tint over the streets and blocks there.
+    if (this.world.k > 1 && th.slow) {
+      var x0 = g.pad + ((g.G - 1) / 2) * g.cell;
+      ctx.fillStyle = th.slow;
+      ctx.fillRect(x0, 0, this.size - x0, this.size);
+    }
   };
 
   MapView.prototype.cabColor = function (cab) {

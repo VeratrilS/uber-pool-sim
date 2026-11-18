@@ -249,6 +249,7 @@ function definePoolMetrics(root) {
       },
       series: { pool: P.series, base: B.series },
       rules: ruleStats(sim),
+      threats: threatEffect(sim),
       original: originalRules(sim),
     };
   }
@@ -315,6 +316,21 @@ function definePoolMetrics(root) {
 
   // Re-run the same city under the original prototype's rules, stopped at the
   // same moment, so the report can show exactly what the enhancements changed.
+  // What the bomb threats did (pool city): riders delayed, the delay the
+  // cordons directly added to their planned trips, stops moved, detour pay.
+  function threatEffect(sim) {
+    var T = sim.pool.totals;
+    if (!T.threats) return null;
+    return {
+      threats: T.threats,
+      affected: T.affected,
+      movedStops: T.movedStops,
+      threatPay: T.threatPay,
+      delay: T.threatDelay,
+      avgDelay: T.affected ? T.threatDelay / T.affected : null,
+    };
+  }
+
   function originalRules(sim) {
     if (!anyEnhancement(sim.cfg)) return null;
     var o = new Sim.Simulation(Object.assign({}, sim.cfg, Sim.ORIGINAL_RULES));
