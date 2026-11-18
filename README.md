@@ -4,7 +4,7 @@ Two cities, same riders, same cabs, same bomb threat. Left: our model. Right: th
 
 ![The enhanced model (left) and the original model (right) playing the same city, with a bomb-threat cordon closed and the slow right side shaded](docs/side-by-side.png)
 
-Run it: double-click `start.bat` or open `index.html`. No server, no install.
+Run it: open `index.html` in a browser. No server, no install.
 
 ## The problem we found
 
