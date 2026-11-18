@@ -20,14 +20,21 @@ That hit 63% of pooled trips. Riders got 30% off even when nobody joined, and ca
 
 ## Six fixes
 
-1. **Paid per rider.** A pooled trip pays at least what the solo trips would have.
-2. **A premium that learns.** The two-rider bonus resets to break-even after every pooled trip.
-3. **Sharing rewarded.** 35% off if you shared, 25% if nobody joined.
-4. **Pool-first matching.** Riders join a cab already pooling unless it's 20+ seconds worse.
-5. **Pickup cover.** No driver ends below zero on fuel.
-6. **Fastest routes.** Dijkstra over real street costs.
+1. **Paid per rider.** A pooled trip pays at least what the solo trips would have, so taking a second rider never
+   costs the driver.
+2. **A premium that learns.** The two-rider bonus resets to break-even after every pooled trip, instead of a fixed
+   25% that is right in one city and wrong in the next.
+3. **Sharing rewarded.** 35% off if you shared, 25% if nobody joined: the discount pays for sharing, not for ticking
+   a box.
+4. **Pool-first matching.** Riders join a cab already pooling unless it's 20+ seconds worse, which keeps empty cabs
+   free for the next request.
+5. **Pickup cover.** The drive to a pickup is unpaid but burns fuel; the platform covers any trip that runs at a
+   loss, so no driver ends below zero.
+6. **Fastest routes.** Dijkstra over real street costs, so cabs do their north-south driving on the fast side and
+   find the shortest way around a cordon.
 
-The city is harder too, for every model: the right half is 25% slower, and bomb threats close a cordon at random.
+The city is harder too, for every model: the right half is 25% slower (congestion), and bomb threats close a
+cordon at random. Riders inside walk to its edge, and drivers are paid for the detour.
 
 ## See it
 
