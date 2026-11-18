@@ -246,8 +246,8 @@
   function syncCompareView() {
     var orig = showingOriginal();
     els.titlePool.textContent = orig ? 'Enhanced model' : 'With Pool';
-    els.titleBase.innerHTML = orig ? 'Original prototype <span class="tag">given</span>' : 'No Pool <span class="tag">baseline</span>';
-    els.subBase.textContent = orig ? 'Same city and riders, the original rules' : 'Same riders and cabs, everyone rides solo';
+    els.titleBase.innerHTML = orig ? 'Original model <span class="tag">given</span>' : 'No Pool <span class="tag">baseline</span>';
+    els.subBase.textContent = orig ? 'Same city, original rules' : 'Same riders and cabs, everyone rides solo';
     els.compareSwitch.querySelectorAll('[data-view]').forEach(function (b) {
       var v = b.getAttribute('data-view');
       b.setAttribute('aria-pressed', String(v === (orig ? 'orig' : 'base')));
