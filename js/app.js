@@ -24,7 +24,7 @@
       ],
     },
     {
-      group: 'Enhancements', note: 'Switch the toggles off and set pool-first to 0 to get the original prototype back.', items: [
+      group: 'Enhancements', presets: true, items: [
         { key: 'driverGuarantee', label: 'Driver paid per rider carried', toggle: true, hint: 'A driver carrying two riders earns at least what the two solo trips would pay, so pooling never costs the driver. Paid by the platform; fares do not change.' },
         { key: 'dynamicPremium', label: 'Dynamic premium X', toggle: true, hint: 'X follows the break-even premium learned from finished pooled trips. X above is where it starts.' },
         { key: 'matchedDiscount', label: 'Bigger discount only if matched', toggle: true, hint: 'Pool riders pay the never-matched discount upfront and get refunded up to the matched discount at drop-off if they actually shared.' },
@@ -112,7 +112,10 @@
     var html = '';
     CONTROLS.forEach(function (g) {
       html += '<section class="group"><div class="group-title">' + g.group + '</div>'
-        + (g.note ? '<p class="group-note">' + g.note + '</p>' : '');
+        + (g.note ? '<p class="group-note">' + g.note + '</p>' : '')
+        + (g.presets ? '<div class="presets">'
+          + '<button class="preset" type="button" data-preset="original">Original rules</button>'
+          + '<button class="preset" type="button" data-preset="enhanced">All enhancements</button></div>' : '');
       g.items.forEach(function (c) {
         var id = 'in-' + c.key;
         if (c.toggle) {
@@ -154,6 +157,15 @@
       if (!key) return;
       if (e.target.type === 'checkbox') setConfig(key, e.target.checked ? 1 : 0);
       else if (e.target.type === 'number') setConfig(key, e.target.value);
+    });
+    // Presets: flip every enhancement off (the original prototype) or back on.
+    els.config.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-preset]');
+      if (!b || isLocked()) return;
+      var src = b.getAttribute('data-preset') === 'original' ? Sim.ORIGINAL_RULES : Sim.DEFAULTS;
+      Object.keys(Sim.ORIGINAL_RULES).forEach(function (k) { state.cfg[k] = src[k]; });
+      syncControls();
+      newRun();
     });
     $('dice').addEventListener('click', function () {
       setConfig('seed', Math.floor(Math.random() * 99999));
@@ -253,6 +265,7 @@
       if (inputs[k].range) inputs[k].range.disabled = locked;
     });
     $('dice').disabled = locked;
+    els.config.querySelectorAll('[data-preset]').forEach(function (b) { b.disabled = locked; });
     els.defaults.disabled = locked;
     updateUi();
   }
