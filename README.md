@@ -63,11 +63,25 @@ Across 16 random cities, default settings, 30 cabs, original against enhanced:
 
 `node test/compare.js` reproduces these.
 
-## Under the hood
+## The algorithms
 
-- `js/sim.js`: the rules (`closeTrip`, `closeJob`, `matchQueue`), the roads (`dijkstraTo`, `dist`, `nextStep`) and
-  the bombs (`startThreat`).
-- `js/metrics.js`, `js/report.js`: the before and after, the bomb effect and the 12-city check.
-- `js/app.js`: controls, presets and the three-way comparison. `js/render.js`: the slow side and the cordons.
+The city is a weighted graph: 2,500 corners, streets that cost 1 (or 1.25 on the slow side), and cordon streets that
+are effectively closed.
+
+- **Fastest routes: Dijkstra, run backwards.** One search from a destination gives the quickest route to it from every
+  corner, using a binary heap. Results are cached per road state, so a cordon closing or lifting is the only thing
+  that forces a recompute. `dijkstraTo` and `row` in `js/sim.js`.
+- **Fitting a rider into a cab: constrained insertion.** For each nearby cab, every pickup and drop-off position in its
+  list of stops is tried, O(n²), and the plan is replayed to check every rider's limits: 2 seats, the 1.5× ride
+  promise, the pickup slip. The cheapest valid plan wins, with pool-first breaking near-ties. `bestInsertion` and
+  `matchQueue`.
+- **Fair pay: settled per trip.** Each cab tracks its current trip and job. When the cab empties, the pay floor and
+  the pickup cover are settled in O(1). `closeTrip` and `closeJob`.
+
+## The code
+
+- `js/sim.js`: the engine (rules, roads, bombs). `js/metrics.js`, `js/report.js`: the before and after, the bomb
+  effect and the 12-city check. `js/app.js`: controls and the three-way comparison. `js/render.js`: the maps.
 - `node test/sim.test.js` runs 28 tests. Two worth knowing: with every enhancement off and the city made uniform, the
-  engine reproduces the original prototype exactly; and Dijkstra matches a brute-force search on every corner.
+  engine reproduces the original prototype exactly; and Dijkstra matches a brute-force search (Bellman-Ford) on every
+  corner of random cities.

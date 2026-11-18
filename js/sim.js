@@ -402,8 +402,14 @@ function definePoolSim(root) {
 
   // Fastest-cost row to a target corner (see dijkstraTo), cached.
   World.prototype.row = function (bx, by) {
-    var G = this.cfg.gridSize, rows = rowsFor(G, this.k, this.zone), id = bx * G + by;
-    var r = rows.get(id);
+    var G = this.cfg.gridSize, id = bx * G + by;
+    // Look the shared cache up once per road state (cordon open or closed),
+    // not on every one of the ~100k calls a run makes.
+    if (!this._rows || this._rowsZone !== this.zone) {
+      this._rows = rowsFor(G, this.k, this.zone);
+      this._rowsZone = this.zone;
+    }
+    var rows = this._rows, r = rows.get(id);
     if (!r) { r = dijkstraTo(G, this.k, this.zone, bx, by); rows.set(id, r); }
     return r;
   };
