@@ -51,27 +51,32 @@
     </aside>
 
     <main>
-      <div class="compare-switch" role="group" aria-label="Right-hand map" id="compare-switch">
-        <span>Right-hand map:</span>
-        <button class="seg" type="button" data-view="orig" aria-pressed="true">Original model (given)</button>
-        <button class="seg" type="button" data-view="base" aria-pressed="false">No Pool</button>
-      </div>
-      <section class="maps">
+      <section class="maps" id="maps">
         <figure class="map-card">
           <figcaption class="map-head">
             <div>
-              <h2 id="title-pool">With Pool</h2>
+              <h2>Enhanced model</h2>
               <p id="sub-pool">Opt-in riders can share a cab</p>
             </div>
             <div class="map-stats" id="stats-pool"></div>
           </figcaption>
-          <div class="canvas-wrap"><canvas id="map-pool" aria-label="Map of the city with pooling"></canvas></div>
+          <div class="canvas-wrap"><canvas id="map-pool" aria-label="Map of the city under the enhanced model"></canvas></div>
+        </figure>
+        <figure class="map-card" id="card-orig">
+          <figcaption class="map-head">
+            <div>
+              <h2>Original model <span class="tag">given</span></h2>
+              <p>Same city, the original rules</p>
+            </div>
+            <div class="map-stats" id="stats-orig"></div>
+          </figcaption>
+          <div class="canvas-wrap"><canvas id="map-orig" aria-label="Map of the same city under the original model"></canvas></div>
         </figure>
         <figure class="map-card">
           <figcaption class="map-head">
             <div>
-              <h2 id="title-base">No Pool <span class="tag">baseline</span></h2>
-              <p id="sub-base">Same riders and cabs, everyone rides solo</p>
+              <h2>No Pool <span class="tag">baseline</span></h2>
+              <p>Same riders and cabs, everyone rides solo</p>
             </div>
             <div class="map-stats" id="stats-base"></div>
           </figcaption>
@@ -95,8 +100,9 @@
         <li class="legend-hint">Hover a cab for its riders</li>
       </ul>
 
+      <p class="live-cap">Enhanced model vs No Pool</p>
       <section class="live" id="live" aria-label="Live comparison"></section>
-      <p class="live-cap">Enhanced vs original rules: the same city, running alongside under the original prototype's rules</p>
+      <p class="live-cap">Enhanced model vs original model</p>
       <section class="live live-enh" id="live-enh" aria-label="Enhanced vs original rules, live"></section>
     </main>
   </div>

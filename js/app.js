@@ -75,8 +75,7 @@
     defaults: $('btn-defaults'), speed: $('speed'), status: $('status'), clock: $('clock'),
     clockTotal: $('clock-total'), progress: $('progress'),
     statsPool: $('stats-pool'), statsBase: $('stats-base'), subPool: $('sub-pool'),
-    titlePool: $('title-pool'), titleBase: $('title-base'), subBase: $('sub-base'),
-    compareSwitch: $('compare-switch'), legendSlow: $('legend-slow'),
+    statsOrig: $('stats-orig'), maps: $('maps'), legendSlow: $('legend-slow'),
     live: $('live'), liveEnh: $('live-enh'), report: $('report'), reportPanel: $('report-panel'), tooltip: $('tooltip'),
   };
 
@@ -91,12 +90,12 @@
     effSpeed: null,
     summary: null,
     hover: null, // { view, cab }
-    rightView: 'orig', // right map: 'orig' (original prototype) or 'base' (No Pool)
   };
 
   var views = {
-    pool: new window.MapView($('map-pool')),
-    base: new window.MapView($('map-base')),
+    pool: new window.MapView($('map-pool')),  // enhanced model
+    orig: new window.MapView($('map-orig')),  // original model, same city
+    base: new window.MapView($('map-base')),  // No Pool
   };
 
   // ------------------------------------------------------------ controls
@@ -230,39 +229,15 @@
     state.summary = null;
     state.hover = null;
     views.pool.setWorld(state.sim.pool);
-    views.base.setWorld(rightWorld());
-    syncCompareView();
+    views.orig.setWorld(state.orig ? state.orig.pool : null);
+    views.base.setWorld(state.sim.base);
+    els.maps.classList.toggle('no-orig', !state.orig);
+    layoutMaps();
     setStatus('ready');
     updateUi();
   }
 
-  // ------------------------------------------------------------ right-hand map
-
-  // The right map shows either the original prototype (same city, original
-  // rules) or the No Pool city. Original needs at least one enhancement on.
-  function showingOriginal() { return state.rightView === 'orig' && !!state.orig; }
-  function rightWorld() { return showingOriginal() ? state.orig.pool : state.sim.base; }
-
-  function syncCompareView() {
-    var orig = showingOriginal();
-    els.titlePool.textContent = orig ? 'Enhanced model' : 'With Pool';
-    els.titleBase.innerHTML = orig ? 'Original model <span class="tag">given</span>' : 'No Pool <span class="tag">baseline</span>';
-    els.subBase.textContent = orig ? 'Same city, original rules' : 'Same riders and cabs, everyone rides solo';
-    els.compareSwitch.querySelectorAll('[data-view]').forEach(function (b) {
-      var v = b.getAttribute('data-view');
-      b.setAttribute('aria-pressed', String(v === (orig ? 'orig' : 'base')));
-      if (v === 'orig') b.disabled = !state.orig;
-    });
-  }
-
-  els.compareSwitch.addEventListener('click', function (e) {
-    var b = e.target.closest('[data-view]');
-    if (!b || b.disabled) return;
-    state.rightView = b.getAttribute('data-view');
-    views.base.setWorld(rightWorld());
-    syncCompareView();
-    updateUi();
-  });
+  function eachView(fn) { Object.keys(views).forEach(function (k) { fn(views[k]); }); }
 
   function start() {
     if (state.status === 'finished') newRun();
@@ -327,8 +302,7 @@
     }
 
     var now = performance.now();
-    views.pool.draw(now);
-    views.base.draw(now);
+    eachView(function (v) { v.draw(now); });
     if (ts - state.lastUi > 120) {
       state.lastUi = ts;
       updateUi();
@@ -410,9 +384,10 @@
     els.subPool.textContent = cfg.poolOptIn + '% opt in · cap ' + cfg.maxDetour.toFixed(2) + '× · X ' + Math.round(sim.pool.X * 100) + '%'
       + (cfg.dynamicPremium ? ' (dynamic)' : '');
 
-    var lp = sim.pool.live(), lb = sim.base.live(), rw = rightWorld();
+    var lp = sim.pool.live(), lb = sim.base.live();
     els.statsPool.innerHTML = mapStats(lp, true) + threatStat(sim.pool);
-    els.statsBase.innerHTML = mapStats(rw.live(), rw.poolEnabled) + threatStat(rw);
+    els.statsOrig.innerHTML = state.orig ? mapStats(state.orig.pool.live(), true) + threatStat(state.orig.pool) : '';
+    els.statsBase.innerHTML = mapStats(lb, false) + threatStat(sim.base);
     els.legendSlow.textContent = cfg.rightSlow ? 'Slower side (+' + cfg.rightSlow + '% travel time)' : 'No slower side';
 
     var ps = poolRiderStats(sim.pool);
@@ -561,7 +536,7 @@
   function openReport() {
     var sim = state.sim;
     state.hover = null;
-    views.pool.hoverCab = views.base.hoverCab = null;
+    eachView(function (v) { v.hoverCab = null; });
     hideTip();
     state.summary = Metrics.summarize(sim);
     els.reportPanel.innerHTML = Report.render(state.summary);
@@ -760,10 +735,9 @@
   function layoutMaps() {
     var wraps = document.querySelectorAll('.canvas-wrap');
     var size = Infinity;
-    wraps.forEach(function (w) { size = Math.min(size, w.clientWidth); });
+    wraps.forEach(function (w) { if (w.clientWidth > 0) size = Math.min(size, w.clientWidth); }); // skip hidden maps
     if (!isFinite(size) || size <= 0) return;
-    views.pool.resize(size);
-    views.base.resize(size);
+    eachView(function (v) { v.resize(size); });
   }
 
   // ------------------------------------------------------------ wiring
@@ -788,7 +762,7 @@
   });
 
   var mq = window.matchMedia('(prefers-color-scheme: dark)');
-  var onTheme = function () { views.pool.setTheme(); views.base.setTheme(); };
+  var onTheme = function () { eachView(function (v) { v.setTheme(); }); };
   if (mq.addEventListener) mq.addEventListener('change', onTheme);
   else if (mq.addListener) mq.addListener(onTheme);
 
@@ -800,8 +774,7 @@
 
   buildControls();
   buildSpeed();
-  wireMap(views.pool);
-  wireMap(views.base);
+  eachView(wireMap);
   newRun();
   layoutMaps();
   requestAnimationFrame(frame);
