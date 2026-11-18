@@ -1,11 +1,12 @@
-# PoolSim: Uber Pool that's fair to drivers and riders
+<h1 align="center">PoolSim</h1>
 
-One city, three rule books, played side by side.
+<p align="center"><b>Uber Pool that's fair to drivers and riders.</b><br>
+One city, three rule books, played side by side.</p>
 
 ![Three maps of the same city at the same moment: the enhanced model, the original model and No Pool, with a bomb-threat cordon closed and the slow right side shaded](docs/side-by-side.png)
 
-*252 seconds in. Same riders, same cabs, same bomb threat. Riders still waiting: 21 in the enhanced model, 25 in the
-original, 35 without pooling.*
+<p align="center"><i>252 seconds in. Same riders, same cabs, same bomb threat.<br>
+Riders still waiting: <b>21</b> in the enhanced model, <b>25</b> in the original, <b>35</b> without pooling.</i></p>
 
 Open `index.html` and press Start.
 
@@ -14,17 +15,10 @@ Open `index.html` and press Start.
 In the original prototype a driver is paid per second with someone aboard, and seconds with two riders count once.
 So carrying two people together can pay less than carrying them one after the other:
 
-```
-Two riders, 20 s trip each, driver paid $0.35 per second with anyone aboard
+![Timeline of two riders: one after the other the driver is paid for 40 seconds, $14.00; pooled, the 15 seconds with both aboard are paid once, so the driver gets $11.81](docs/pay-flaw.svg)
 
-One after the other   A ████████████████████
-                      B                     ████████████████████   paid 40 s   $14.00
-Together              A █████████████████████████
-                      B           ████████████████████              paid 30 s   $11.81
-```
-
-That happened on 63% of pooled trips. On top of that, every rider who opted in got 30% off even if nobody joined,
-and cabs always drove an L-shaped route, even straight through the slowest part of town.
+On top of that, every rider who opted in got 30% off even if nobody joined, and cabs always drove an L-shaped route,
+even straight through the slowest part of town.
 
 ## What I changed
 

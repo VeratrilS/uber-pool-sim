@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="262" viewBox="0 0 760 262" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <title>Why pooled drivers earned less in the original model</title>
+  <defs>
+    <pattern id="both" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="6" height="6" fill="#f2a477"/>
+      <rect width="3" height="6" fill="#e8743b"/>
+    </pattern>
+  </defs>
+  <rect x="0.5" y="0.5" width="759" height="261" rx="12" fill="#ffffff" stroke="#e3e5e8"/>
+
+  <text x="24" y="34" font-size="15" font-weight="700" fill="#1f2328">Two riders, a 20-second trip each. The driver earns $0.35 for every second someone is aboard.</text>
+
+  <!-- time axis: 0..40 s, x = 190 + 11*s -->
+  <g font-size="11" fill="#8b9096">
+    <text x="190" y="64" text-anchor="middle">0 s</text>
+    <text x="300" y="64" text-anchor="middle">10 s</text>
+    <text x="410" y="64" text-anchor="middle">20 s</text>
+    <text x="520" y="64" text-anchor="middle">30 s</text>
+    <text x="630" y="64" text-anchor="middle">40 s</text>
+  </g>
+  <g stroke="#eef0f2">
+    <line x1="190" y1="72" x2="190" y2="238"/><line x1="300" y1="72" x2="300" y2="238"/>
+    <line x1="410" y1="72" x2="410" y2="238"/><line x1="520" y1="72" x2="520" y2="238"/>
+    <line x1="630" y1="72" x2="630" y2="238"/>
+  </g>
+
+  <!-- one after the other -->
+  <text x="24" y="104" font-size="13" font-weight="600" fill="#1f2328">One after the other</text>
+  <rect x="190" y="84" width="220" height="16" rx="4" fill="#4c8bf5"/>
+  <text x="198" y="96" font-size="11" font-weight="600" fill="#fff">A</text>
+  <rect x="410" y="106" width="220" height="16" rx="4" fill="#2ba36b"/>
+  <text x="418" y="118" font-size="11" font-weight="600" fill="#fff">B</text>
+  <text x="646" y="100" font-size="12" fill="#57606a">paid 40 s</text>
+  <text x="646" y="118" font-size="16" font-weight="700" fill="#1f2328">$14.00</text>
+
+  <!-- together -->
+  <text x="24" y="182" font-size="13" font-weight="600" fill="#1f2328">Together (pooled)</text>
+  <rect x="190" y="162" width="275" height="16" rx="4" fill="#4c8bf5"/>
+  <text x="198" y="174" font-size="11" font-weight="600" fill="#fff">A</text>
+  <rect x="300" y="184" width="220" height="16" rx="4" fill="#2ba36b"/>
+  <text x="508" y="196" font-size="11" font-weight="600" fill="#fff" text-anchor="end">B</text>
+  <rect x="300" y="162" width="165" height="38" fill="url(#both)" opacity="0.9"/>
+  <text x="382" y="216" font-size="11" fill="#c2551f" text-anchor="middle">both aboard: 15 s, paid once (+25%)</text>
+  <text x="646" y="178" font-size="12" fill="#57606a">paid 30 s</text>
+  <text x="646" y="196" font-size="16" font-weight="700" fill="#cf222e">$11.81</text>
+
+  <text x="24" y="246" font-size="12" fill="#57606a">Same two people delivered, $2.19 less. This happened on 63% of pooled trips in the original model.</text>
+</svg>
