@@ -34,6 +34,13 @@
       ],
     },
     {
+      group: 'Incidents', note: 'Random bomb threats. Same threats in both cities.', items: [
+        { key: 'threatsPer10Min', label: 'Bomb threats', unit: 'per 10 min', min: 0, max: 20, step: 1, hint: 'A square cordon closes at a random place and time. Cabs drive around it; pickups and drop-offs inside move to its edge. 0 = none.' },
+        { key: 'threatRadius', label: 'Cordon size', unit: 'blocks', min: 1, max: 10, step: 1, hint: 'Blocks from the threat to the cordon edge.' },
+        { key: 'threatDuration', label: 'Cordon closed for', unit: 's', min: 10, max: 300, step: 10 },
+      ],
+    },
+    {
       group: 'Dispatch & rerouting', items: [
         { key: 'pingRadius', label: 'Ping radius', unit: 'blocks', min: 1, max: 100, step: 1, hint: 'Only cabs that can reach the pickup within this many blocks of driving are offered the request.' },
         { key: 'patience', label: 'Rider patience', unit: 's', min: 10, max: 600, step: 10, hint: 'Riders with no match for this long give up.' },
@@ -287,6 +294,14 @@
     return txt;
   }
 
+  // Bomb threats so far; flagged while a cordon is closed.
+  function threatStat(world) {
+    if (!world.cfg.threatsPer10Min) return '';
+    var z = world.zone;
+    return '<div class="' + (z ? 'threat-on' : '') + '"><b>' + world.totals.threats + '</b><span>'
+      + (z ? 'Cordon ' + Math.ceil(z.until - world.t) + ' s' : 'Threats') + '</span></div>';
+  }
+
   function mapStats(l, withShared) {
     var cells = [
       ['Waiting', l.waiting],
@@ -343,8 +358,8 @@
       + (cfg.dynamicPremium ? ' (dynamic)' : '');
 
     var lp = sim.pool.live(), lb = sim.base.live();
-    els.statsPool.innerHTML = mapStats(lp, true);
-    els.statsBase.innerHTML = mapStats(lb, false);
+    els.statsPool.innerHTML = mapStats(lp, true) + threatStat(sim.pool);
+    els.statsBase.innerHTML = mapStats(lb, false) + threatStat(sim.base);
 
     var ps = poolRiderStats(sim.pool);
     var payDelta = lp.driverPay - lb.driverPay;
@@ -440,6 +455,7 @@
     html += '<div class="tip-rider"><div class="tip-row">Earned<b>' + fmt.money(cab.earnings) + '</b></div>'
       + (cab.premium > 0 ? '<div class="tip-row tip-muted">incl. 2-aboard premium<b>' + fmt.money(cab.premium) + '</b></div>' : '')
       + (cab.topup > 0 ? '<div class="tip-row tip-muted">incl. per-rider pay floor<b>' + fmt.money(cab.topup) + '</b></div>' : '')
+      + (cab.threatPay > 0 ? '<div class="tip-row tip-muted">incl. cordon detour pay<b>' + fmt.money(cab.threatPay) + '</b></div>' : '')
       + (cab.cover > 0 ? '<div class="tip-row tip-muted">incl. pickup cover<b>' + fmt.money(cab.cover) + '</b></div>' : '')
       + (cab.pooledTrips ? '<div class="tip-row tip-muted">Pooled trips<b>' + cab.pooledTrips + '</b></div>' : '')
       + '<div class="tip-row tip-muted">Trips completed<b>' + cab.trips + '</b></div>'

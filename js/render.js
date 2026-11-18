@@ -188,6 +188,23 @@
     ctx.restore();
     ctx.globalAlpha = 1;
 
+    // Bomb-threat cordon: closed area, drawn under everything else.
+    if (w.zone) {
+      var z = w.zone;
+      var zx = g.pad + (z.x1 - 0.5) * cell, zy = g.pad + (z.y1 - 0.5) * cell;
+      var zw = (z.x2 - z.x1 + 1) * cell, zh = (z.y2 - z.y1 + 1) * cell;
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = th.bad;
+      ctx.fillRect(zx, zy, zw, zh);
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = th.bad;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(zx, zy, zw, zh);
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+
     // Planned routes; cabs that just rerouted mid-ride are drawn bold.
     for (i = 0; i < cabs.length; i++) {
       c = cabs[i];

@@ -83,6 +83,10 @@ function definePoolSim(root) {
     unmatchedDiscount: 20, // % off for a pool rider who never shared
     poolFirst: 20,        // s of matching cost a shared option may exceed an idle cab by and still win
     netFloor: 1,          // no job pays the driver less than its running cost
+    // Incidents: random bomb threats that close a square cordon for a while.
+    threatsPer10Min: 0,   // average threats per 10 simulated minutes (0 = none)
+    threatRadius: 4,      // cordon half-width, blocks
+    threatDuration: 60,   // seconds the cordon stays closed
   };
 
   // The original prototype's rules: every enhancement switched off.
@@ -138,6 +142,10 @@ function definePoolSim(root) {
     });
     cfg.unmatchedDiscount = Math.max(0, Math.min(cfg.poolDiscount, cfg.unmatchedDiscount));
     cfg.poolFirst = Math.max(0, cfg.poolFirst);
+    cfg.threatsPer10Min = Math.max(0, cfg.threatsPer10Min);
+    // Keep a free street on at least one side of the cordon in each direction.
+    cfg.threatRadius = Math.max(1, Math.min(Math.floor((cfg.gridSize - 3) / 2), Math.round(cfg.threatRadius)));
+    cfg.threatDuration = Math.max(1, cfg.threatDuration);
     return cfg;
   }
 
@@ -162,7 +170,36 @@ function definePoolSim(root) {
     }
     riders.sort(function (a, b) { return a.requestAt - b.requestAt; });
     riders.forEach(function (r, idx) { r.id = idx; });
-    return { cabs: cabs, riders: riders };
+    return { cabs: cabs, riders: riders, threats: makeThreats(cfg) };
+  }
+
+  // Bomb threats: random times (Poisson) and places, one cordon at a time.
+  // Own random stream, so turning threats on never moves riders or cabs.
+  function makeThreats(cfg) {
+    var rng = mulberry32((cfg.seed ^ 0x5bd1e995) >>> 0);
+    var G = cfg.gridSize, R = cfg.threatRadius, rate = cfg.threatsPer10Min / 600;
+    var out = [], t = 0;
+    while (rate > 0) {
+      t += -Math.log(1 - rng()) / rate;
+      if (t >= cfg.duration) break;
+      var cx = Math.floor(rng() * G), cy = Math.floor(rng() * G);
+      if (out.length && t < out[out.length - 1].until) continue;
+      out.push({
+        at: t, until: t + cfg.threatDuration, x: cx, y: cy,
+        x1: Math.max(0, cx - R), x2: Math.min(G - 1, cx + R),
+        y1: Math.max(0, cy - R), y2: Math.min(G - 1, cy + R),
+      });
+    }
+    return out;
+  }
+
+  // Extra blocks to go around a cordon spanning [lo, hi] when going from a
+  // to b along the other axis: detour via the free street just outside it.
+  function aroundExtra(a, b, lo, hi, G) {
+    var best = Infinity, straight = Math.abs(a - b);
+    if (lo - 1 >= 0) best = Math.min(best, Math.abs(a - lo + 1) + Math.abs(b - lo + 1) - straight);
+    if (hi + 1 <= G - 1) best = Math.min(best, Math.abs(a - hi - 1) + Math.abs(b - hi - 1) - straight);
+    return best;
   }
 
   function World(cfg, scenario, poolEnabled) {
@@ -195,7 +232,14 @@ function definePoolSim(root) {
       lossJobs: 0,        // ...whose pay was below their running cost before any cover
       jobLoss: 0,         // $ those jobs fell short by
       cover: 0,           // $ paid by the pickup cover (netFloor)
+      threats: 0,         // bomb threats that closed a cordon
+      affected: 0,        // riders whose trip was under way (or requested) while a cordon was closed
+      movedStops: 0,      // pickups/drop-offs moved out of a cordon to its edge
+      threatPay: 0,       // $ paid to drivers for empty detours around a cordon
     };
+    this.threats = scenario.threats;
+    this.threatIdx = 0;
+    this.zone = null;     // the cordon closed right now, if any
 
     var speed = this.speed;
     this.cabs = scenario.cabs.map(function (p, i) {
@@ -207,7 +251,7 @@ function definePoolSim(root) {
         time: { idle: 0, empty: 0, one: 0, two: 0 },
         blocks: { empty: 0, one: 0, two: 0 },
         earnings: 0, premium: 0, trips: 0, reroutes: 0,
-        topup: 0, pooledTrips: 0, cover: 0,
+        topup: 0, pooledTrips: 0, cover: 0, threatPay: 0,
         trip: null,     // the trip in progress: from first pickup until empty again
         job: null,      // the job in progress: from being given a rider until free again
         planVersion: 0, rerouteVersion: 0,
@@ -235,15 +279,22 @@ function definePoolSim(root) {
         reassigned: 0,          // times moved to a closer cab before pickup
         joinedOccupied: false,  // boarded a cab that already had a rider
         hosted: false,          // someone boarded while this rider was aboard
+        affected: false,        // a bomb-threat cordon was closed during their trip
       };
     });
   }
 
   World.prototype.step = function () {
+    // Bomb threats: open the next cordon, close the current one when it expires.
+    if (this.zone && this.t >= this.zone.until - EPS) this.endThreat();
+    if (this.threatIdx < this.threats.length && this.t >= this.threats[this.threatIdx].at - EPS) {
+      this.startThreat(this.threats[this.threatIdx++]);
+    }
     // Riders who requested before this instant join the queue.
     while (this.arrivalIdx < this.riders.length && this.riders[this.arrivalIdx].requestAt <= this.t) {
       var r = this.riders[this.arrivalIdx++];
       r.state = 'waiting';
+      if (this.zone) this.affect(r);
       this.queue.push(r);
       this.totals.requested++;
     }
@@ -259,6 +310,100 @@ function definePoolSim(root) {
 
   // ---------------------------------------------------------------- movement
 
+  // ---------------------------------------------------------------- bomb threats
+
+  World.prototype.inZone = function (x, y) {
+    var z = this.zone;
+    return !!z && x >= z.x1 && x <= z.x2 && y >= z.y1 && y <= z.y2;
+  };
+
+  // Shortest driving distance. With no cordon it is the Manhattan distance.
+  // A single rectangular cordon only lengthens a trip when it blocks every
+  // shortest path: it covers the whole span between the two points along one
+  // axis and sits strictly between them along the other. Then the cab goes
+  // round via the nearest free street beside it. (From inside the cordon a
+  // cab simply drives straight out.)
+  World.prototype.dist = function (ax, ay, bx, by) {
+    var d = manhattan(ax, ay, bx, by), z = this.zone, G = this.cfg.gridSize;
+    if (!z || this.inZone(ax, ay) || this.inZone(bx, by)) return d;
+    if (Math.min(ax, bx) >= z.x1 && Math.max(ax, bx) <= z.x2 && Math.min(ay, by) < z.y1 && Math.max(ay, by) > z.y2) {
+      return d + aroundExtra(ax, bx, z.x1, z.x2, G);
+    }
+    if (Math.min(ay, by) >= z.y1 && Math.max(ay, by) <= z.y2 && Math.min(ax, bx) < z.x1 && Math.max(ax, bx) > z.x2) {
+      return d + aroundExtra(ay, by, z.y1, z.y2, G);
+    }
+    return d;
+  };
+
+  // Next street to drive. No cordon: the original L-shaped route (x leg, then
+  // y leg). With a cordon: the first neighbour on a shortest path that does
+  // not enter the cordon (a cab already inside may drive out through it).
+  World.prototype.nextStep = function (cab, s) {
+    var x = cab.x, y = cab.y, sx = Math.sign(s.x - x), sy = Math.sign(s.y - y);
+    if (this.zone) {
+      var d = this.dist(x, y, s.x, s.y), inside = this.inZone(x, y), G = this.cfg.gridSize;
+      var moves = [[sx, 0], [0, sy], [1, 0], [-1, 0], [0, 1], [0, -1]];
+      for (var i = 0; i < moves.length; i++) {
+        var nx = x + moves[i][0], ny = y + moves[i][1];
+        if ((nx === x && ny === y) || nx < 0 || ny < 0 || nx >= G || ny >= G) continue;
+        if (!inside && this.inZone(nx, ny)) continue;
+        if (this.dist(nx, ny, s.x, s.y) === d - 1) {
+          return { x: nx, y: ny, away: manhattan(nx, ny, s.x, s.y) > manhattan(x, y, s.x, s.y) };
+        }
+      }
+    }
+    return sx ? { x: x + sx, y: y } : { x: x, y: y + sy };
+  };
+
+  // Nearest street corner just outside the cordon.
+  World.prototype.safePoint = function (x, y) {
+    var z = this.zone, G = this.cfg.gridSize, best = null;
+    [[z.x1 - 1, y], [z.x2 + 1, y], [x, z.y1 - 1], [x, z.y2 + 1]].forEach(function (p) {
+      if (p[0] < 0 || p[1] < 0 || p[0] >= G || p[1] >= G) return;
+      if (!best || manhattan(x, y, p[0], p[1]) < manhattan(x, y, best[0], best[1])) best = p;
+    });
+    return best;
+  };
+
+  // A rider caught by a cordon: pickup and drop-off inside it move to its edge
+  // (the rider walks out; nobody is driven into a closed area).
+  World.prototype.affect = function (r) {
+    if (!r.affected) { r.affected = true; this.totals.affected++; }
+    var p;
+    if (r.state !== 'riding' && this.inZone(r.ox, r.oy)) {
+      p = this.safePoint(r.ox, r.oy); r.ox = p[0]; r.oy = p[1]; this.totals.movedStops++;
+    }
+    if (this.inZone(r.dx, r.dy)) {
+      p = this.safePoint(r.dx, r.dy); r.dx = p[0]; r.dy = p[1]; this.totals.movedStops++;
+    }
+  };
+
+  World.prototype.startThreat = function (th) {
+    this.zone = th;
+    this.totals.threats++;
+    var i, j, c;
+    for (i = 0; i < this.riders.length; i++) {
+      var r = this.riders[i];
+      if (r.state === 'waiting' || r.state === 'assigned' || r.state === 'riding') this.affect(r);
+    }
+    for (i = 0; i < this.cabs.length; i++) {
+      c = this.cabs[i];
+      if (!c.plan.length) continue;
+      for (j = 0; j < c.plan.length; j++) {
+        var s = c.plan[j];
+        if (s.type === 'pickup') { s.x = s.rider.ox; s.y = s.rider.oy; } else { s.x = s.rider.dx; s.y = s.rider.dy; }
+      }
+      c.planVersion++;
+      if (c.onboard.length) c.rerouteVersion++;
+    }
+  };
+
+  // Lifting a cordon only shortens routes, so every plan stays valid.
+  World.prototype.endThreat = function () {
+    this.zone = null;
+    for (var i = 0; i < this.cabs.length; i++) this.cabs[i].planVersion++;
+  };
+
   World.prototype.advance = function (cab) {
     var budget = this.speed * DT; // blocks this step
     var now = this.t;
@@ -271,16 +416,22 @@ function definePoolSim(root) {
           return;
         }
         if (budget <= EPS) return;
-        var s = cab.plan[0];
-        // L-shaped routing: finish the x leg, then the y leg.
-        cab.next = s.x !== cab.x
-          ? { x: cab.x + Math.sign(s.x - cab.x), y: cab.y }
-          : { x: cab.x, y: cab.y + Math.sign(s.y - cab.y) };
+        cab.next = this.nextStep(cab, cab.plan[0]);
         cab.progress = 0;
       }
       var move = Math.min(1 - cab.progress, budget);
       var sec = move / this.speed;
       this.accrue(cab, sec, move);
+      // Empty detour around a cordon: each block driven away from the target
+      // costs two blocks (out and back), and the platform pays for both.
+      if (cab.next.away && !cab.onboard.length) {
+        var tp = 2 * sec * this.cfg.driverRate;
+        cab.earnings += tp;
+        cab.threatPay += tp;
+        this.totals.driverPay += tp;
+        this.totals.threatPay += tp;
+        if (cab.job) cab.job.pay += tp;
+      }
       cab.progress += move;
       budget -= move;
       now += sec;
@@ -447,8 +598,8 @@ function definePoolSim(root) {
   // mid-edge finishes the edge first.
   World.prototype.reach = function (cab, x, y) {
     return cab.next
-      ? 1 - cab.progress + manhattan(cab.next.x, cab.next.y, x, y)
-      : manhattan(cab.x, cab.y, x, y);
+      ? 1 - cab.progress + this.dist(cab.next.x, cab.next.y, x, y)
+      : this.dist(cab.x, cab.y, x, y);
   };
 
   // Time the plan and check every rule. Returns null if any rule breaks.
@@ -468,7 +619,7 @@ function definePoolSim(root) {
     var picks = {}, drops = {}, newPick = null;
     for (var i = 0; i < plan.length; i++) {
       var s = plan[i], r = s.rider;
-      t += manhattan(x, y, s.x, s.y) / speed;
+      t += this.dist(x, y, s.x, s.y) / speed;
       x = s.x; y = s.y;
       if (s.type === 'pickup') {
         load++;
@@ -485,7 +636,8 @@ function definePoolSim(root) {
       } else {
         load--;
         var pt = r.state === 'riding' ? r.pickupAt : picks[r.id];
-        if (check && t - pt > limit * r.est + EPS) return null;
+        // Cap vs the solo route as it is now (a cordon can make it longer).
+        if (check && t - pt > limit * Math.max(r.est, this.dist(r.ox, r.oy, r.dx, r.dy) / speed) + EPS) return null;
         drops[r.id] = t;
       }
     }

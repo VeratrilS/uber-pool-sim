@@ -39,7 +39,9 @@ const SCENARIOS = [
   { gridSize: 20, riders: 300, cabs: 15, cabSpeed: 2.5, seed: 9 },
   { pingRadius: 3, patience: 40, pickupSlip: 0 },
   { pingRadius: 200, reassign: 0, riders: 400 },
+  { threatsPer10Min: 8, threatRadius: 6, threatDuration: 50, seed: 2 },
 ];
+const THREATS = SCENARIOS[SCENARIOS.length - 1];
 const cache = new Map();
 function finished(over) {
   const key = JSON.stringify(over);
@@ -71,7 +73,7 @@ test('every pool rider rides at most maxDetour x their solo estimate', () => {
   for (const over of SCENARIOS) {
     const s = finished(over);
     for (const r of s.pool.riders) {
-      if (r.state !== 'done') continue;
+      if (r.state !== 'done' || r.affected) continue;
       assert(inCar(r) <= s.cfg.maxDetour * r.est + EPS,
         `rider ${r.id}: ${inCar(r).toFixed(3)}s > ${s.cfg.maxDetour} x ${r.est.toFixed(3)}s`);
     }
@@ -82,7 +84,7 @@ test('solo riders (both worlds) ride exactly their estimate and never share', ()
   for (const over of SCENARIOS) {
     const s = finished(over);
     for (const r of s.base.riders.concat(s.pool.riders.filter((x) => !x.pool))) {
-      if (r.state !== 'done') continue;
+      if (r.state !== 'done' || r.affected) continue;
       assert(Math.abs(inCar(r) - r.est) < EPS, `rider ${r.id} solo ride ${inCar(r)} != ${r.est}`);
       assert(r.sharedSec < EPS && r.coRiders.length === 0, `solo rider ${r.id} shared`);
     }
@@ -96,7 +98,7 @@ test('pickups honour the ping radius and the allowed slip', () => {
     const cfg = s.cfg;
     for (const w of [s.pool, s.base]) {
       for (const r of w.riders) {
-        if (r.pickupAt == null) continue;
+        if (r.pickupAt == null || r.affected) continue;
         assert(r.pickupAt <= r.latestPickupAt + EPS, `rider ${r.id} picked up after the slip window`);
         assert(r.pickupAt - r.assignedAt <= cfg.pingRadius / cfg.cabSpeed + cfg.pickupSlip + EPS,
           `rider ${r.id} picked up from beyond the ping radius`);
@@ -231,7 +233,7 @@ test('metrics survive degenerate runs (no riders, one cab)', () => {
 
 test('all enhancements off reproduces the original prototype exactly', () => {
   const O = require('./original/sim.js');
-  for (const over of SCENARIOS) {
+  for (const over of SCENARIOS.filter((o) => !o.threatsPer10Min)) {
     const cfg = Object.assign({}, O.DEFAULTS, over);
     const a = new O.Simulation(cfg).runToEnd();
     const b = new S.Simulation(Object.assign({}, cfg, S.ORIGINAL_RULES)).runToEnd();
@@ -272,7 +274,7 @@ test('enhanced pay = rate x occupied s + premium + top-ups + pickup cover, and s
     for (const w of [s.pool, s.base]) {
       let total = 0, topup = 0, cover = 0;
       for (const c of w.cabs) {
-        const expect = s.cfg.driverRate * (c.time.one + c.time.two) + c.premium + c.topup + c.cover;
+        const expect = s.cfg.driverRate * (c.time.one + c.time.two) + c.premium + c.topup + c.cover + c.threatPay;
         assert(Math.abs(c.earnings - expect) < 1e-6, `cab ${c.id} pay mismatch`);
         total += c.earnings;
         topup += c.topup;
@@ -360,6 +362,74 @@ test('pool-first: 0 restores the cheapest-wins rule; on, more pool riders share 
     }
   }
   assert(onShared > offShared, `pool-first should raise sharing (${onShared} vs ${offShared})`);
+});
+
+// ------------------------------------------------------------ bomb threats
+
+test('cordon distance equals the true shortest path (BFS) on the grid', () => {
+  const G = 16;
+  const w = sim({ gridSize: G, riders: 0, cabs: 1 }).pool;
+  const rnd = (n) => Math.floor(Math.random() * n);
+  for (let k = 0; k < 40; k++) {
+    const R = 1 + rnd(5), cx = rnd(G), cy = rnd(G);
+    w.zone = { x1: Math.max(0, cx - R), x2: Math.min(G - 1, cx + R), y1: Math.max(0, cy - R), y2: Math.min(G - 1, cy + R) };
+    // BFS from one free corner over free corners.
+    let ax, ay;
+    do { ax = rnd(G); ay = rnd(G); } while (w.inZone(ax, ay));
+    const D = new Array(G * G).fill(-1), q = [[ax, ay]];
+    D[ax * G + ay] = 0;
+    while (q.length) {
+      const [x, y] = q.shift();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= G || ny >= G || w.inZone(nx, ny) || D[nx * G + ny] >= 0) continue;
+        D[nx * G + ny] = D[x * G + y] + 1;
+        q.push([nx, ny]);
+      }
+    }
+    for (let bx = 0; bx < G; bx++) for (let by = 0; by < G; by++) {
+      if (w.inZone(bx, by)) continue;
+      assert.strictEqual(w.dist(ax, ay, bx, by), D[bx * G + by], `zone ${JSON.stringify(w.zone)} (${ax},${ay})->(${bx},${by})`);
+    }
+  }
+});
+
+test('bomb threats: cabs never drive into a closed cordon, no stop inside it, both cities hit alike', () => {
+  let sawZone = false;
+  const s = sim(THREATS);
+  const allowed = new WeakSet(); // cabs inside (or entering) when the cordon closed may drive out
+  let lastZone = null;
+  while (!s.done) {
+    s.step();
+    for (const w of [s.pool, s.base]) {
+      const z = w.zone;
+      if (!z) continue;
+      sawZone = true;
+      if (z !== lastZone && w === s.pool) lastZone = z;
+      for (const c of w.cabs) {
+        const inNow = w.inZone(c.x, c.y), nextIn = c.next && w.inZone(c.next.x, c.next.y);
+        if ((inNow || nextIn) && w.t - z.at < 1.05) allowed.add(c);
+        if (!allowed.has(c)) assert(!inNow && !nextIn, `cab ${c.id} entered the cordon`);
+        for (const st of c.plan) assert(!w.inZone(st.x, st.y), `cab ${c.id} has a stop inside the cordon`);
+      }
+    }
+  }
+  s.finish();
+  assert(sawZone, 'no threat happened');
+  assert(s.pool.totals.threats > 0 && s.pool.totals.threats === s.base.totals.threats, 'both cities get the same threats');
+  assert(s.pool.totals.affected > 0 && s.pool.totals.movedStops > 0, 'expected riders affected and stops moved');
+  // Empty detours are rare at a 15-block ping radius (pickups are near), so use a wide one.
+  const paid = [1, 2, 3].some((seed) => sim(Object.assign({}, THREATS, { seed, pingRadius: 40 })).runToEnd().pool.totals.threatPay > 0);
+  assert(paid, 'drivers should be paid for empty detours around a cordon');
+});
+
+test('threats leave riders and cabs where they were, and 0 threats changes nothing', () => {
+  const a = S.makeScenario(S.normalizeConfig(Object.assign({}, S.DEFAULTS, THREATS)));
+  const b = S.makeScenario(S.normalizeConfig(Object.assign({}, S.DEFAULTS, THREATS, { threatsPer10Min: 0 })));
+  assert.deepStrictEqual(a.riders, b.riders);
+  assert.deepStrictEqual(a.cabs, b.cabs);
+  assert(a.threats.length > 0 && b.threats.length === 0);
+  for (let i = 1; i < a.threats.length; i++) assert(a.threats[i].at >= a.threats[i - 1].until, 'cordons overlap');
 });
 
 console.log(`\n${passed} passed${process.exitCode ? ', some FAILED' : ''}`);

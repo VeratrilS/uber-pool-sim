@@ -248,6 +248,8 @@ input:disabled { cursor: not-allowed; opacity: 0.5; }
 .sw.lost::before, .sw.lost::after { content: ""; position: absolute; left: 4px; top: -1px; width: 2px; height: 12px; background: var(--bad); border-radius: 1px; }
 .sw.lost::before { transform: rotate(45deg); }
 .sw.lost::after { transform: rotate(-45deg); }
+.sw.cordon { width: 12px; height: 12px; border: 1.5px dashed var(--bad); background: color-mix(in srgb, var(--bad) 16%, transparent); }
+.map-stats .threat-on b, .map-stats .threat-on span { color: var(--bad); }
 .sw.reroute { width: 14px; height: 3px; border-radius: 2px; background: var(--pool1); }
 
 /* ------------------------------------------------------------------ live tiles */

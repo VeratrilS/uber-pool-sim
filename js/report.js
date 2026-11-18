@@ -642,6 +642,14 @@
         ['Cab-seconds with 2 aboard', bw.time.two, pw.time.two, fmt.int, 'int', null],
       ]],
     ];
+    if (pw.threats || bw.threats) {
+      groups.push(['Bomb threats (same in both cities)', [
+        ['Threats (cordons closed)', bw.threats, pw.threats, fmt.int, 'int', null],
+        ['Riders caught by a cordon', bw.affected, pw.affected, fmt.int, 'int', null],
+        ['Pickups / drop-offs moved to the cordon edge', bw.movedStops, pw.movedStops, fmt.int, 'int', null],
+        ['Paid to drivers for empty detours', bw.threatPay, pw.threatPay, fmt.money, 'money', null],
+      ]]);
+    }
     return tableHtml(groups, 'No Pool', 'With Pool');
   }
 
@@ -756,6 +764,7 @@
       ['Discount if matched', cfg.matchedDiscount ? 'on (' + cfg.unmatchedDiscount + '% if not)' : 'off'],
       ['Pool-first', cfg.poolFirst ? cfg.poolFirst + ' s' : 'off'],
       ['Pickup cover', cfg.netFloor ? 'on' : 'off'],
+      ['Bomb threats', cfg.threatsPer10Min ? cfg.threatsPer10Min + '/10 min, ±' + cfg.threatRadius + ' blocks, ' + cfg.threatDuration + ' s' : 'off'],
     ].map(function (x) { return '<span class="chip"><b>' + x[0] + '</b> ' + x[1] + '</span>'; }).join('');
 
     var cutoff = s.t + 1e-6 < cfg.duration;
@@ -852,7 +861,8 @@
       + 'Passenger time and savings count trips completed by P; driver pay, time and distance accrue up to P; fares are charged upfront at pickup'
       + (cfg.matchedDiscount ? ' (pool riders at the unmatched discount, refunded up to Y at drop-off if they shared)' : '') + '. '
       + (cfg.driverGuarantee ? 'The per-rider pay floor is settled when a pooled trip ends (the cab is empty again). ' : '')
-      + (cfg.netFloor ? 'Pickup cover is settled when a job ends (the cab is free again) and applies in both cities.' : '')
+      + (cfg.netFloor ? 'Pickup cover is settled when a job ends (the cab is free again) and applies in both cities. ' : '')
+      + (cfg.threatsPer10Min ? 'Bomb threats close a square cordon at the same random times and places in both cities: cabs drive around it, pickups and drop-offs inside move to its edge, empty detours are paid, and riders caught by a cordon are exempt from the time promises.' : '')
       + (cutoff ? ' This run was stopped before P, so these are interim numbers.' : '') + '</footer>';
   }
 

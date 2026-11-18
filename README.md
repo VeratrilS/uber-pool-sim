@@ -17,6 +17,17 @@ city without it. Built on top of the given prototype.
 
 All off = original prototype (tested).
 
+## Incidents: random bomb threats
+
+Set "Bomb threats" in the sidebar (default 0 = off). At a random time and place, a square cordon closes for a while,
+the same in both cities:
+
+- Cabs drive around it on the shortest open route.
+- Pickups and drop-offs inside it move to its edge.
+- Drivers are paid for empty detours around it.
+
+The report counts threats, riders caught, and stops moved.
+
 ## Results (16 random cities, 30 cabs)
 
 - Pooled trips where the driver loses money: 16 → 0
@@ -27,7 +38,7 @@ All off = original prototype (tested).
 
 ## Code changes
 
-- `js/sim.js`: the five rules (`closeTrip`, `closeJob`, fares, `matchQueue`)
+- `js/sim.js`: the five rules (`closeTrip`, `closeJob`, fares, `matchQueue`) and bomb threats (`startThreat`, `dist`, `nextStep`)
 - `js/metrics.js`, `js/report.js`: report section comparing original vs enhanced on the same city
 - `js/app.js`, `index.html`, `styles.css`: sidebar controls and live tiles
-- `test/sim.test.js`: 8 new tests; `start.bat`: launcher
+- `test/sim.test.js`: 11 new tests (27 total); `start.bat`: launcher
