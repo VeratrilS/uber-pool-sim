@@ -55,3 +55,9 @@ The city is harder too, for every model: the right half is 25% slower, and bomb 
 
 `node test/sim.test.js` runs 28 tests, including: everything off reproduces the original exactly, and Dijkstra
 matches brute force.
+
+## Assumptions
+
+- No traffic beyond the slow right half; demand is spread evenly, as in the original.
+- Every driver accepts every request offered; a rider's choice to opt in doesn't react to price.
+- The platform, not riders, pays the driver protections (fixes 1 and 5).
