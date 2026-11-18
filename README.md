@@ -3,85 +3,55 @@
 <p align="center"><b>Uber Pool that's fair to drivers and riders.</b><br>
 One city, three rule books, played side by side.</p>
 
-![Three maps of the same city at the same moment: the enhanced model, the original model and No Pool, with a bomb-threat cordon closed and the slow right side shaded](docs/side-by-side.png)
+![Three maps of the same city at the same moment: the enhanced model, the original model and No Pool](docs/side-by-side.png)
 
-<p align="center"><i>252 seconds in. Same riders, same cabs, same bomb threat.<br>
-Riders still waiting: <b>21</b> in the enhanced model, <b>25</b> in the original, <b>35</b> without pooling.</i></p>
+<p align="center"><i>252 seconds in, same riders and same bomb threat. Riders still waiting:<br>
+<b>21</b> enhanced, <b>25</b> original, <b>35</b> without pooling.</i></p>
 
 Open `index.html` and press Start.
 
-## The flaw I found
+## The flaw
 
-In the original prototype a driver is paid per second with someone aboard, and seconds with two riders count once.
-So carrying two people together can pay less than carrying them one after the other:
+Drivers were paid per second with someone aboard, so seconds with two riders counted once. Pooling paid them less:
 
-![Timeline of two riders: one after the other the driver is paid for 40 seconds, $14.00; pooled, the 15 seconds with both aboard are paid once, so the driver gets $11.81](docs/pay-flaw.svg)
+![One after the other the driver earns $14.00; pooled, the shared seconds are paid once and the driver earns $11.81](docs/pay-flaw.svg)
 
-On top of that, every rider who opted in got 30% off even if nobody joined, and cabs always drove an L-shaped route,
-even straight through the slowest part of town.
+That hit 63% of pooled trips. Riders got 30% off even when nobody joined, and cabs drove fixed L-shaped routes.
 
-## What I changed
+## Six fixes
 
-Six enhancements, in the sidebar under **Enhancements**. "Original rules" and "All enhancements" flip them at once.
+1. **Paid per rider.** A pooled trip pays at least what the solo trips would have.
+2. **A premium that learns.** The two-rider bonus resets to break-even after every pooled trip.
+3. **Sharing rewarded.** 35% off if you shared, 25% if nobody joined.
+4. **Pool-first matching.** Riders join a cab already pooling unless it's 20+ seconds worse.
+5. **Pickup cover.** No driver ends below zero on fuel.
+6. **Fastest routes.** Dijkstra over real street costs.
 
-1. **Drivers paid per rider.** A pooled trip pays at least what the riders' solo trips would have.
-2. **A premium that learns.** The extra pay for two riders resets after every pooled trip to the break-even value.
-3. **Sharing rewarded.** 35% off if you actually shared, 25% if nobody joined (was 30% for everyone).
-4. **Pool-first matching.** A pool rider joins a cab already on a pool trip unless that's 20+ seconds worse.
-5. **Pickup cover.** If a trip costs the driver more in fuel than it pays, the platform covers it.
-6. **Fastest routes.** Dijkstra over the real street costs, instead of the fixed L-shaped route.
+The city is harder too, for every model: the right half is 25% slower, and bomb threats close a cordon at random.
 
-I also made the city harder, equally for every model:
+## See it
 
-- **The right side is slow.** Every street on the right half takes 25% longer (shaded on the maps).
-- **Bomb threats.** A cordon closes at random for 90 s, at least once per run. Cabs route around it, riders inside
-  walk to its edge, and drivers are paid for the empty detour.
+- **Maps:** enhanced cabs dodge the slow side and carry more orange two-rider trips.
+- **Tiles:** "Pooled trips where the driver lost money" stays at 0. Green means better than the original.
+- **Fuel slider at 0.30:** drivers below zero drop from 5 to 0.
+- **Report:** before and after, the bomb's effect, and a replay on 12 other cities:
 
-## What to watch
-
-- **The three maps.** Enhanced cabs bend left to avoid the slow side and carry more orange two-rider trips; the
-  original cabs drive straight through.
-- **The two rows of tiles.** One compares the enhanced model with No Pool, the other with the original model. Green
-  means better. Start with "Pooled trips where the driver lost money": the enhanced model stays at 0.
-- **X in the first map's header.** It climbs from 25% to about 45% as it learns.
-- **The fuel slider.** Set "Driver running cost" to 0.30 and drivers below zero drop from 5 to 0.
-- **The report.** It opens at the end with the full before and after, what the bomb did (on the default city, 10
-  riders delayed and 27 s of delay added), and your settings replayed on 12 other cities:
-
-![The report's check on 12 other random cities: drivers better off in 12 of 12, riders in 12 of 12, no pooled trip where a driver lost money in 12 of 12](docs/other-cities.png)
+![Drivers better off in 12 of 12 cities, riders in 12 of 12, no pooled trip where a driver lost money in 12 of 12](docs/other-cities.png)
 
 ## The numbers
 
-Across 16 random cities, default settings, 30 cabs, original against enhanced:
+16 random cities, 30 cabs, original → enhanced (`node test/compare.js`):
 
-- Pooled trips where the driver lost money: **12.7 per run → 0**.
-- Drivers earn **$53 more** per run, ahead in 15 of 16 cities.
-- Riders save **$45 more** per run, ahead in all 16.
-- Riders who actually share: **65% → 69%** (30% → 47% with 60 cabs).
-- Waits a little shorter (21.9 s → 21.4 s), a few more rides completed (149.0 → 150.7).
-- The cost: the platform's margin is about 19% lower. That money is what pays drivers and riders.
-
-`node test/compare.js` reproduces these.
+- Driver-losing pooled trips: **12.7 → 0** per run.
+- Drivers **+$53**, riders **+$45** per run.
+- Riders who share: **65% → 69%** (30% → 47% with 60 cabs).
+- Waits and rides: slightly better. The platform funds it: margin about 19% lower.
 
 ## The algorithms
 
-The city is a weighted graph: 2,500 corners, streets that cost 1 (or 1.25 on the slow side), and cordon streets that
-are effectively closed.
+- **Dijkstra, run backwards** from each destination with a binary heap, cached per road state (`dijkstraTo`).
+- **Constrained insertion:** every pickup and drop-off slot is tried and every rider's limits checked (`bestInsertion`).
+- **Per-trip settlement** of the pay floor and pickup cover (`closeTrip`, `closeJob`).
 
-- **Fastest routes: Dijkstra, run backwards.** One search from a destination gives the quickest route to it from every
-  corner, using a binary heap. Results are cached per road state, so a cordon closing or lifting is the only thing
-  that forces a recompute. `dijkstraTo` and `row` in `js/sim.js`.
-- **Fitting a rider into a cab: constrained insertion.** For each nearby cab, every pickup and drop-off position in its
-  list of stops is tried, O(n²), and the plan is replayed to check every rider's limits: 2 seats, the 1.5× ride
-  promise, the pickup slip. The cheapest valid plan wins, with pool-first breaking near-ties. `bestInsertion` and
-  `matchQueue`.
-- **Fair pay: settled per trip.** Each cab tracks its current trip and job. When the cab empties, the pay floor and
-  the pickup cover are settled in O(1). `closeTrip` and `closeJob`.
-
-## The code
-
-- `js/sim.js`: the engine (rules, roads, bombs). `js/metrics.js`, `js/report.js`: the before and after, the bomb
-  effect and the 12-city check. `js/app.js`: controls and the three-way comparison. `js/render.js`: the maps.
-- `node test/sim.test.js` runs 28 tests. Two worth knowing: with every enhancement off and the city made uniform, the
-  engine reproduces the original prototype exactly; and Dijkstra matches a brute-force search (Bellman-Ford) on every
-  corner of random cities.
+`node test/sim.test.js` runs 28 tests, including: everything off reproduces the original exactly, and Dijkstra
+matches brute force.
