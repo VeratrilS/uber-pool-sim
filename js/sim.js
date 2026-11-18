@@ -1,59 +1,45 @@
 /*
  * PoolSim engine — pure simulation, no DOM.
  *
- * Two "twin" worlds are built from one scenario (same riders, same request
- * times, same cab start positions). One world allows pooling, the other
- * serves everyone solo. Comparing them isolates the effect of Pool.
+ * Twin worlds are built from one scenario (same riders, request times, cab
+ * start positions and bomb threats). One world allows pooling, the other
+ * serves everyone solo, so comparing them isolates the effect of Pool.
  *
- * Model
- *  - City: G x G intersections, Manhattan metric. Cabs move one edge at a
- *    time and only turn at intersections, so a planned stop time is exactly
- *    the realised time (no traffic noise).
- *  - Requests arrive at random times over the whole run. A rider's "original
- *    estimate" is the solo in-car time: manhattan(origin, destination) / speed.
- *  - Each cab has a plan: an ordered list of pickups and drop-offs. A new pool
- *    request may be inserted anywhere in a pool cab's plan (the cab reroutes),
- *    so one rider can share with several co-riders over a single trip.
- *  - Hard rules checked on every insertion, for every rider in the plan:
- *      * never more than 2 riders aboard at any point of the plan;
- *      * a pool rider's in-car time <= maxDetour x their estimate;
- *      * an assigned rider's pickup slips at most pickupSlip seconds past
- *        the time they were promised;
- *      * the new rider's pickup is within pingRadius blocks of driving.
- *  - Unmatched riders give up after `patience` seconds.
- *  - Optional re-dispatch: an assigned rider still waiting for pickup is moved
- *    to a free cab that can reach them much sooner.
+ * City
+ *  - G x G intersections. A street costs 1 "block-time"; streets on the right
+ *    half cost 1 + rightSlow/100 (congestion). Time = cost / cab speed.
+ *  - Cabs move one street at a time and only turn at intersections, so a
+ *    planned stop time is exactly the realised time.
+ *  - Bomb threats close a square cordon at random times and places. Cabs
+ *    route around it; stops inside move to its edge (see startThreat).
+ *
+ * Original rules (all enhancements off)
+ *  - Cabs drive an L-shaped route: the east-west leg, then the north-south leg.
+ *  - Each cab has a plan of pickups and drop-offs. A pool rider may be
+ *    inserted anywhere in a pool cab's plan; the cheapest option wins.
+ *  - Hard rules, checked for every rider on every insertion: never more than
+ *    2 aboard; a pool rider's in-car time <= maxDetour x their solo trip time;
+ *    a promised pickup slips at most pickupSlip s; the new pickup is within
+ *    pingRadius of driving. Unmatched riders give up after `patience` s.
  *  - Driver pay: driverRate per occupied second, x(1 + X) while 2 are aboard.
- *    Driving to a pickup is unpaid. Running cost accrues per block driven.
- *  - Rider fare: fareRate x estimate, x(1 - Y) for pool opt-ins, charged at
- *    pickup whether or not a co-rider is ever found.
+ *    Pickup driving is unpaid; running cost accrues per block driven.
+ *  - Fare: fareRate x the rider's original estimate, x(1 - Y) for pool riders.
  *
- * Enhancements (each is a config toggle; all off = the original rules)
- *  - driverGuarantee: a "pooled trip" runs from the moment a cab picks up its
- *    first rider until it is empty again, with two riders aboard at some
- *    point. When it ends, the driver is paid at least what those riders would
- *    have paid as solo trips (driverRate x each rider's estimate). Any
- *    shortfall is topped up by the platform.
- *  - dynamicPremium: X is no longer fixed. After every pooled trip the engine
- *    learns the break-even premium (1 - detour s / shared s) as a moving
- *    average weighted by shared seconds, and sets X = break-even + a small
- *    bonus, clamped to [0, 100%]. Uses only data a platform has live.
- *  - matchedDiscount: a pool rider is charged upfront at a small discount
- *    (unmatchedDiscount) and refunded up to sharedDiscount at drop-off only
- *    if they actually shared the cab. Sharing is rewarded more than the old
- *    flat Y, and riders who never share get less. Stops paying Y for pooling that never happened.
- *  - poolFirst (matching): when a pool rider could take an idle cab or join a
- *    cab already on a pool trip, the shared option wins unless it costs more
- *    than poolFirst extra rider-seconds. Keeps idle cabs free for the next
- *    request and raises the share of pool riders who actually share.
- *    0 = the original rule (cheapest option wins outright).
- *  - netFloor (pickup cover): a "job" is the drive to a pickup plus the ride,
- *    until the cab is empty again (or free, if its rider was moved to another
- *    cab). If the job's pay is less than its running cost (pickup driving
- *    included, which is otherwise unpaid), the platform pays the difference.
- *    A cab only drives during a job, so a driver's net never drops below zero
- *    except for the one job still in progress.
- *    Applies in both cities: it is a driver protection, not a pooling rule.
+ * Enhancements (config toggles; ORIGINAL_RULES switches them all off)
+ *  - driverGuarantee: when a pooled trip ends (the cab is empty again after
+ *    carrying two), the driver gets at least what its riders' solo trips would
+ *    have paid on these streets. The platform pays any shortfall.
+ *  - dynamicPremium: after every pooled trip X is relearned as the break-even
+ *    premium (1 - detour s / shared s), a moving average weighted by shared s.
+ *  - matchedDiscount: pool riders pay unmatchedDiscount upfront and are
+ *    refunded up to sharedDiscount at drop-off if they actually shared.
+ *  - poolFirst: a cab already on a pool trip beats an idle cab unless it costs
+ *    more than poolFirst extra rider-seconds.
+ *  - netFloor (pickup cover): if a job (pickup drive + ride) pays less than its
+ *    running cost, the platform pays the difference, so no driver ends below
+ *    zero. Both worlds: it protects drivers, it is not a pooling rule.
+ *  - fastRoutes: cabs follow the fastest path (Dijkstra over street costs)
+ *    instead of the L-shaped route.
  */
 // Wrapped in a named factory so app.js can also boot it inside a Web Worker.
 function definePoolSim(root) {
@@ -68,7 +54,7 @@ function definePoolSim(root) {
     maxDetour: 1.5,     // max in-car time / original estimate
     driverPremium: 25,  // X, % extra per second while 2 riders are aboard
     poolDiscount: 30,   // Y, % off the standard fare for opting in
-    pingRadius: 15,     // blocks of driving from a cab to a pickup
+    pingRadius: 15,     // driving cost (blocks; slow streets count more) from a cab to a pickup
     patience: 120,      // seconds a rider waits unmatched before giving up
     pickupSlip: 20,     // seconds a promised pickup may slip when a cab reroutes
     reassign: 1,        // 1 = move waiting riders to a cab that frees up closer
@@ -737,8 +723,8 @@ function definePoolSim(root) {
   function pickupStop(r) { return { type: 'pickup', rider: r, x: r.ox, y: r.oy }; }
   function dropoffStop(r) { return { type: 'dropoff', rider: r, x: r.dx, y: r.dy }; }
 
-  // Blocks the cab must still drive to reach (x, y) directly. A cab that is
-  // mid-edge finishes the edge first.
+  // Driving cost (block-time) for the cab to reach (x, y). A cab that is
+  // mid-street finishes that street first.
   World.prototype.reach = function (cab, x, y) {
     return cab.next
       ? (1 - cab.progress) * cab.next.w + this.dist(cab.next.x, cab.next.y, x, y)
@@ -936,9 +922,9 @@ function definePoolSim(root) {
   };
 
   // Re-dispatch: a rider still waiting for pickup moves to a free cab that can
-  // reach them much sooner. Removing stops never makes anyone else later
-  // (Manhattan distances obey the triangle inequality), so the old cab's
-  // remaining riders stay within every rule.
+  // reach them much sooner. With fastest routes (or uniform streets) removing a
+  // stop never makes anyone else later, because shortest-path costs obey the
+  // triangle inequality, so the old cab's remaining riders keep every rule.
   World.prototype.redispatch = function (idle) {
     var radius = this.cfg.pingRadius, speed = this.speed;
     for (var i = 0; i < this.cabs.length && idle.length; i++) {
