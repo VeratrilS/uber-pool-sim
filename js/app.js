@@ -20,15 +20,16 @@
       group: 'Pool rules', items: [
         { key: 'maxDetour', label: 'Max time in car vs. solo', unit: '×', min: 1, max: 3, step: 0.05, decimals: 2, hint: 'Checked for both riders before every match.' },
         { key: 'driverPremium', label: 'Driver premium', sym: 'X', unit: '%', min: 0, max: 100, step: 5, hint: 'Extra pay per second while 2 riders are aboard.' },
-        { key: 'poolDiscount', label: 'Pool rider discount', sym: 'Y', unit: '%', min: 0, max: 90, step: 5 },
+        { key: 'poolDiscount', label: 'Pool rider discount', sym: 'Y', unit: '%', min: 0, max: 90, step: 5, hint: 'Original flat discount. With "discount only if matched" on, the two sliders below are used instead.' },
       ],
     },
     {
       group: 'Enhancements', note: 'Switch the toggles off and set pool-first to 0 to get the original prototype back.', items: [
         { key: 'driverGuarantee', label: 'Driver paid per rider carried', toggle: true, hint: 'A driver carrying two riders earns at least what the two solo trips would pay, so pooling never costs the driver. Paid by the platform; fares do not change.' },
-        { key: 'dynamicPremium', label: 'Dynamic premium X', toggle: true, hint: 'X follows the break-even premium learned from finished pooled trips, plus 5 pts. X above is where it starts.' },
-        { key: 'matchedDiscount', label: 'Full discount only if matched', toggle: true, hint: 'Pool riders pay the smaller discount upfront and get refunded up to Y at drop-off if they actually shared.' },
-        { key: 'unmatchedDiscount', label: 'Discount if never matched', unit: '%', min: 0, max: 90, step: 5, hint: 'For opting in and accepting possible detours. Capped at Y.' },
+        { key: 'dynamicPremium', label: 'Dynamic premium X', toggle: true, hint: 'X follows the break-even premium learned from finished pooled trips. X above is where it starts.' },
+        { key: 'matchedDiscount', label: 'Bigger discount only if matched', toggle: true, hint: 'Pool riders pay the never-matched discount upfront and get refunded up to the matched discount at drop-off if they actually shared.' },
+        { key: 'sharedDiscount', label: 'Discount if matched', unit: '%', min: 0, max: 90, step: 5, hint: 'For riders who actually shared. Higher than the old flat Y, to reward sharing.' },
+        { key: 'unmatchedDiscount', label: 'Discount if never matched', unit: '%', min: 0, max: 90, step: 5, hint: 'For opting in and accepting possible detours. At most the matched discount.' },
         { key: 'netFloor', label: 'Pickup cover (no net loss)', toggle: true, hint: 'If a job (pickup drive + ride) pays the driver less than its running cost, the platform pays the difference. No driver ends a job below zero. Both cities.' },
         { key: 'poolFirst', label: 'Pool-first matching', unit: 's', min: 0, max: 120, step: 5, hint: 'A pool rider joins a cab already on a pool trip unless that costs more than this many rider-seconds over the best idle cab. Keeps idle cabs free and more riders share. 0 = cheapest option wins (original).' },
       ],
@@ -376,7 +377,8 @@
       + tile('Average wait for pickup', fmt.sec(lp.avgWait),
         (waitDelta == null ? '' : chip(waitDelta, false, fmt.signedSec(waitDelta))) + '<span>vs ' + fmt.sec(lb.avgWait) + ' without Pool</span>')
       + tile('Pool riders saved', fmt.money(ps.saved),
-        '<span>' + fmt.int(ps.n) + ' completed pool trips · ' + cfg.poolDiscount + '% off</span>')
+        '<span>' + fmt.int(ps.n) + ' completed pool trips · '
+          + (cfg.matchedDiscount ? cfg.sharedDiscount + '% off if shared, ' + cfg.unmatchedDiscount + '% if not' : cfg.poolDiscount + '% off') + '</span>')
       + tile('Extra time in the car', ps.avgExtra == null ? '—' : fmt.signedPct(ps.avgExtra, 1),
         '<span>pool riders, vs solo estimate · worst ' + fmt.ratio(ps.worst) + ' of ' + cfg.maxDetour.toFixed(2) + '×</span>')
       + tile('Driver earnings', fmt.money(lp.driverPay),

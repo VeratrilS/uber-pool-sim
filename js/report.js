@@ -532,7 +532,7 @@
     } else {
       body1 = (cfg.matchedDiscount
         ? 'Of ' + fmt.int(p.poolCompleted) + ' completed pool riders, <b>' + fmt.int(p.unmatched) + ' (' + fmt.pct(1 - p.matchRate) + ') never shared a second</b>. '
-          + 'With the matched-discount rule they got ' + cfg.unmatchedDiscount + '% off instead of ' + cfg.poolDiscount + '%, so only ' + fmt.money(p.leaked) + ' of discount bought no pooling.'
+          + 'With the matched-discount rule they got ' + cfg.unmatchedDiscount + '% off, while riders who shared got ' + cfg.sharedDiscount + '% (the old flat rate was ' + cfg.poolDiscount + '%).'
         : 'All ' + fmt.int(p.poolCompleted) + ' completed pool riders got ' + cfg.poolDiscount + '% off, but '
           + '<b>' + fmt.int(p.unmatched) + ' (' + fmt.pct(1 - p.matchRate) + ') never shared a second</b>: '
           + fmt.money(p.leaked) + ' of discount bought no pooling at all.')
@@ -719,7 +719,8 @@
       + (cfg.driverGuarantee ? 'No pooled trip paid its driver less than the solo trips it replaced'
         + (o.shortTrips ? ' (under the original rules ' + plural(o.shortTrips, 'pooled trip') + ' did, by ' + fmt.money(o.shortfall) + ' in total)' : '') + '. ' : '')
       + (cfg.matchedDiscount && e.saved < o.saved - 0.5 ? 'Pool riders as a group saved ' + fmt.money(o.saved - e.saved) + ' less, because riders who never shared now get '
-        + cfg.unmatchedDiscount + '% off instead of ' + cfg.poolDiscount + '%. Riders who shared still get the full ' + cfg.poolDiscount + '%. ' : '')
+        + cfg.unmatchedDiscount + '% off instead of ' + cfg.poolDiscount + '%. ' : '')
+      + (cfg.matchedDiscount && e.saved > o.saved + 0.5 ? 'Pool riders as a group saved ' + fmt.money(e.saved - o.saved) + ' more: riders who shared got ' + cfg.sharedDiscount + '% off instead of ' + cfg.poolDiscount + '%. ' : '')
       + (cfg.netFloor && o.lossJobs ? 'Without pickup cover, ' + plural(o.lossJobs, 'job') + ' paid the driver less than it cost to drive (' + fmt.money(o.jobLoss) + '); with it, none did. ' : '')
       + (cfg.driverRate / cfg.cabSpeed <= cfg.costPerBlock ? '<b>Warning: driver pay per block (' + fmt.money(cfg.driverRate / cfg.cabSpeed) + ') is not above the running cost per block (' + fmt.money(cfg.costPerBlock) + '), so every trip loses money and the pickup cover is paying for it. The base pay rate needs to rise.</b> ' : '')
       + 'The per-driver twin comparison is mostly about which rides each cab happened to get, which no pay rule can control, so read it as context rather than a target.';
@@ -761,7 +762,7 @@
       ['X', cfg.driverPremium + '%'], ['Y', cfg.poolDiscount + '%'], ['Radius', cfg.pingRadius + ' blocks'],
       ['Patience', cfg.patience + ' s'], ['Slip', cfg.pickupSlip + ' s'], ['Re-dispatch', cfg.reassign ? 'on' : 'off'], ['Seed', cfg.seed],
       ['Paid per rider', cfg.driverGuarantee ? 'on' : 'off'], ['Dynamic X', cfg.dynamicPremium ? 'on' : 'off'],
-      ['Discount if matched', cfg.matchedDiscount ? 'on (' + cfg.unmatchedDiscount + '% if not)' : 'off'],
+      ['Discount if matched', cfg.matchedDiscount ? cfg.sharedDiscount + '% (' + cfg.unmatchedDiscount + '% if not)' : 'off'],
       ['Pool-first', cfg.poolFirst ? cfg.poolFirst + ' s' : 'off'],
       ['Pickup cover', cfg.netFloor ? 'on' : 'off'],
       ['Bomb threats', cfg.threatsPer10Min ? cfg.threatsPer10Min + '/10 min, ±' + cfg.threatRadius + ' blocks, ' + cfg.threatDuration + ' s' : 'off'],

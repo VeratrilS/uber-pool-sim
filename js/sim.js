@@ -39,8 +39,9 @@
  *    average weighted by shared seconds, and sets X = break-even + a small
  *    bonus, clamped to [0, 100%]. Uses only data a platform has live.
  *  - matchedDiscount: a pool rider is charged upfront at a small discount
- *    (unmatchedDiscount) and refunded up to the full Y at drop-off only if
- *    they actually shared the cab. Stops paying Y for pooling that never happened.
+ *    (unmatchedDiscount) and refunded up to sharedDiscount at drop-off only
+ *    if they actually shared the cab. Sharing is rewarded more than the old
+ *    flat Y, and riders who never share get less. Stops paying Y for pooling that never happened.
  *  - poolFirst (matching): when a pool rider could take an idle cab or join a
  *    cab already on a pool trip, the shared option wins unless it costs more
  *    than poolFirst extra rider-seconds. Keeps idle cabs free for the next
@@ -80,7 +81,8 @@ function definePoolSim(root) {
     driverGuarantee: 1,   // top up a pooled trip to its solo-equivalent pay
     dynamicPremium: 1,    // X follows the observed break-even premium
     matchedDiscount: 1,   // full Y only if the rider actually shared
-    unmatchedDiscount: 20, // % off for a pool rider who never shared
+    sharedDiscount: 35,   // % off for a pool rider who actually shared (with matchedDiscount)
+    unmatchedDiscount: 25, // % off for a pool rider who never shared
     poolFirst: 20,        // s of matching cost a shared option may exceed an idle cab by and still win
     netFloor: 1,          // no job pays the driver less than its running cost
     // Incidents: random bomb threats that close a square cordon for a while.
@@ -102,7 +104,7 @@ function definePoolSim(root) {
   var REASSIGN_MIN_RATIO = 0.7; // ...and the new ETA must be <= 70% of the old
   var EPS = 1e-6;
   var DYN_X_DECAY = 0.85;     // weight kept by older pooled trips in the break-even average
-  var DYN_X_BONUS = 0.05;     // X sits this far above break-even, so drivers come out ahead
+  var DYN_X_BONUS = 0;        // X sits this far above break-even (0 = exactly break-even)
   var DYN_X_MIN = 0, DYN_X_MAX = 1;
 
   function mulberry32(seed) {
@@ -140,7 +142,8 @@ function definePoolSim(root) {
     ['driverGuarantee', 'dynamicPremium', 'matchedDiscount', 'netFloor'].forEach(function (k) {
       cfg[k] = cfg[k] ? 1 : 0;
     });
-    cfg.unmatchedDiscount = Math.max(0, Math.min(cfg.poolDiscount, cfg.unmatchedDiscount));
+    cfg.sharedDiscount = Math.max(0, Math.min(90, cfg.sharedDiscount));
+    cfg.unmatchedDiscount = Math.max(0, Math.min(cfg.sharedDiscount, cfg.unmatchedDiscount));
     cfg.poolFirst = Math.max(0, cfg.poolFirst);
     cfg.threatsPer10Min = Math.max(0, cfg.threatsPer10Min);
     // Keep a free street on at least one side of the cordon in each direction.
@@ -209,6 +212,7 @@ function definePoolSim(root) {
     this.X = cfg.driverPremium / 100;   // premium in force now (moves if dynamicPremium)
     this.Y = cfg.poolDiscount / 100;
     this.Yu = cfg.matchedDiscount ? cfg.unmatchedDiscount / 100 : this.Y; // charged upfront
+    this.Ys = cfg.matchedDiscount ? cfg.sharedDiscount / 100 : this.Y;    // final, if they shared
     this.xLearn = { two: 0, extra: 0 };  // decayed sums behind the break-even estimate
     this.steps = 0;
     this.t = 0;
@@ -568,8 +572,8 @@ function definePoolSim(root) {
         r.dropoffAt = now;
         cab.trips++;
         this.totals.completed++;
-        if (r.pool && r.sharedSec > EPS && this.Y > this.Yu) {
-          r.refund = r.fullFare * (this.Y - this.Yu);
+        if (r.pool && r.sharedSec > EPS && this.Ys > this.Yu) {
+          r.refund = r.fullFare * (this.Ys - this.Yu);
           r.fare -= r.refund;
           this.totals.revenue -= r.refund;
           this.totals.discount += r.refund;

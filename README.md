@@ -9,8 +9,9 @@ city without it. Built on top of the given prototype.
 
 1. **Driver paid per rider:** a pooled trip never pays the driver less than the riders' solo trips would.
    Before, about 70% of pooled trips did.
-2. **Dynamic premium X:** X updates after every pooled trip (break-even + 5%) instead of a fixed 25%.
-3. **Discount only if matched:** 20% off upfront; refunded up to the full 30% only if the rider actually shared.
+2. **Dynamic premium X:** X updates after every pooled trip to the break-even value, instead of a fixed 25%.
+3. **Bigger discount only if matched:** riders who actually share get 35% off (was 30%); riders who never get matched
+   get 25%.
 4. **Pool-first matching:** a pool rider joins a cab already carrying a pool rider unless that's 20+ s worse than an
    empty cab.
 5. **Pickup cover:** if a trip costs the driver more in fuel than it pays, the platform pays the difference.
@@ -34,10 +35,10 @@ The report counts threats, riders caught, and stops moved.
 ## Results (16 random cities, 30 cabs)
 
 - Pooled trips where the driver loses money: 16 → 0
-- Driver earnings: +$96 per run
+- Drivers: +$88 per run. Riders: +$32 saved per run. (Same direction with 15 and 60 cabs.)
 - Pool riders who actually share: 60% → 67% (29% → 47% with 60 cabs)
 - Wait times and rides completed: unchanged
-- Trade-off: riders who never get matched get 20% off instead of 30%
+- Cost: the platform's margin drops about 18% ($105 per run); that money goes to drivers and riders
 
 ## Code changes
 

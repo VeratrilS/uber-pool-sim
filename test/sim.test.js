@@ -301,7 +301,7 @@ test('dynamic premium stays in [0, 100%] and only moves when enabled', () => {
 test('matched discount: full Y only for riders who shared, the smaller discount otherwise', () => {
   for (const over of SCENARIOS) {
     const s = finished(over);
-    const Y = s.cfg.poolDiscount / 100, U = s.cfg.unmatchedDiscount / 100;
+    const Y = s.cfg.sharedDiscount / 100, U = s.cfg.unmatchedDiscount / 100;
     let revenue = 0;
     for (const w of [s.pool, s.base]) {
       revenue = 0;
